@@ -118,4 +118,4 @@ tavern/
 ## Автор
 
 <!-- Замени на свои данные -->
-- GitHub: [@zakrur](https://github.com/zakrur)
+- GitHub: [@G6rm0k](https://github.com/G6rm0k)
