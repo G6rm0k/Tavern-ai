@@ -1,0 +1,21 @@
+{
+  "name": "tavern-app",
+  "version": "1.0.0",
+  "description": "Local AI Chat Frontend - Better than SillyTavern",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "form-data": "^4.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^1.4.5-lts.1",
+    "node-fetch": "^2.7.0",
+    "uuid": "^9.0.0"
+  }
+}

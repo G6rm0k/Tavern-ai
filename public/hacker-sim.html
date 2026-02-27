@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HACKER SIMULATOR v1.0</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0a0a0a; overflow:hidden; font-family:'JetBrains Mono',monospace; }
+  #root { width:100vw; height:100vh; }
+  .crt::before {
+    content:""; position:fixed; top:0; left:0; width:100%; height:100%;
+    background: repeating-linear-gradient(0deg, rgba(0,255,0,0.03) 0px, rgba(0,255,0,0.03) 1px, transparent 1px, transparent 2px);
+    pointer-events:none; z-index:999;
+  }
+  .crt::after {
+    content:""; position:fixed; top:0; left:0; width:100%; height:100%;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%);
+    pointer-events:none; z-index:998;
+  }
+  @keyframes flicker { 0%{opacity:0.97} 50%{opacity:1} 100%{opacity:0.98} }
+  .crt { animation: flicker 0.15s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .cursor-blink { animation: blink 1s step-end infinite; }
+  @keyframes glitch {
+    0%{transform:translate(0)} 20%{transform:translate(-2px,2px)} 40%{transform:translate(-2px,-2px)}
+    60%{transform:translate(2px,2px)} 80%{transform:translate(2px,-2px)} 100%{transform:translate(0)}
+  }
+  .glitch { animation: glitch 0.3s ease; }
+  @keyframes alertFlash { 0%,100%{background:rgba(255,0,0,0.05)} 50%{background:rgba(255,0,0,0.15)} }
+  .alert-bg { animation: alertFlash 0.5s ease 3; }
+  input:focus { outline:none; }
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:#0a0a0a; }
+  ::-webkit-scrollbar-thumb { background:#1a3a1a; border-radius:3px; }
+  @keyframes missionComplete {
+    0%{transform:scale(0.8);opacity:0} 50%{transform:scale(1.05);opacity:1} 100%{transform:scale(1);opacity:1}
+  }
+  .mission-popup { animation: missionComplete 0.5s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ==================== GAME DATA ====================
+
+const FAKE_PASSWORDS_LIST = [
+  'password123','admin2024','letmein','welcome1','qwerty','123456','root','toor',
+  'p@ssw0rd','hunter2','abc123','monkey','dragon','master','iloveyou','trustno1',
+  'sunshine','princess','football','shadow','superman','michael','access',
+  'hello123','charlie','donald','batman','starwars','whatever','freedom',
+  'nicole','joshua','pepper','daniel','maggie','cookie','summer','ashley2024',
+  'passw0rd!','s3cur1ty','@dmin!23','r00tme','h4ck3d','z3r0day','m3t4spl01t',
+];
+
+const createServers = () => [
+  {
+    ip:'192.168.1.10', hostname:'corp-fileserv', os:'Ubuntu 22.04 LTS',
+    ports:[22,80,445], services:{22:'OpenSSH 8.9',80:'Apache 2.4.54',445:'Samba 4.17'},
+    difficulty:1, firewall:false, ids:false,
+    users:['root','admin','www-data','smbuser'],
+    password:'admin2024', cracked:false,
+    connections:['192.168.1.20','10.0.1.15'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{
+        'passwd':'root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nsmbuser:x:1001:1001::/home/smbuser:/bin/bash\nadmin:x:1000:1000:Admin:/home/admin:/bin/bash',
+        'shadow':'root:$6$rounds=5000$salt$hash:19000:0:99999:7:::\nadmin:$6$xKz8vPqR$hash:19350:0:99999:7:::',
+        'hosts':'127.0.0.1 localhost\n192.168.1.10 corp-fileserv\n10.0.1.15 mail-prod\n10.0.2.50 db-master',
+        'ssh':{'sshd_config':'Port 22\nPermitRootLogin yes\nPasswordAuthentication yes\nMaxAuthTries 6'},
+      },
+      'home':{
+        'admin':{
+          '.bash_history':'ls -la\ncd /var/www\nnano config.php\nssh admin@10.0.1.15\nmysql -u dbadmin -p -h 10.0.2.50',
+          'notes.txt':'TODO:\n- Change default passwords!\n- mail server password: mail_s3cure#21\n- DB server needs new certs\n- VPN config at 172.16.0.1',
+          '.ssh':{'id_rsa':'-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA3r5h+1kJOvMN7qFQ\nn3kDa8uT4wP2L8cGxVmJKzQfZ7R+xN4p\n(truncated for security)\n-----END RSA PRIVATE KEY-----'}
+        },
+        'smbuser':{'documents':{'report.docx':'[Binary file - Microsoft Word Document]','budget.xlsx':'[Binary file - Microsoft Excel Spreadsheet]'}}
+      },
+      'var':{
+        'log':{
+          'auth.log':'Feb 25 09:14:22 corp-fileserv sshd[1423]: Accepted password for admin from 192.168.1.1 port 52431\nFeb 25 11:02:15 corp-fileserv sshd[1587]: Failed password for root from 10.0.1.25 port 44123\nFeb 25 14:33:01 corp-fileserv sshd[1702]: Accepted password for smbuser from 192.168.1.20 port 39812',
+          'syslog':'Feb 25 09:00:01 corp-fileserv CRON[1401]: (root) CMD (/usr/bin/backup.sh)\nFeb 25 12:00:01 corp-fileserv CRON[1590]: (root) CMD (/usr/bin/cleanup.sh)',
+        },
+        'www':{'html':{'index.html':'<html><head><title>Corp File Server</title></head><body><h1>Internal File Server</h1></body></html>'}},
+        'samba':{'shared':{
+          'passwords.xlsx':'=== COMPANY PASSWORDS ===\nService      | Username  | Password\n-------------|-----------|------------------\nMail Server  | admin     | mail_s3cure#21\nHR Portal    | hradmin   | hr@ccess2024!\nMonitoring   | monitor   | m0n!t0r_24\nVPN Gateway  | vpnadmin  | vpn_G4t3w@y!\nBackup NAS   | backup    | b4ckup_s3cur3',
+          'network_diagram.txt':'=== INTERNAL NETWORK MAP ===\n\n[192.168.1.0/24] -- DMZ\n  |-- 192.168.1.10 corp-fileserv\n  |-- 192.168.1.20 web-frontend\n  |-- 192.168.1.30 dev-ci-01\n\n[10.0.1.0/24] -- INTERNAL\n  |-- 10.0.1.15 mail-prod\n  |-- 10.0.1.25 hr-internal\n\n[10.0.2.0/24] -- DATA\n  |-- 10.0.2.50 db-master\n  |-- 10.0.2.100 backup-nas\n\n[172.16.0.0/24] -- MGMT\n  |-- 172.16.0.1 vpn-gateway\n  |-- 172.16.0.10 monitoring-01\n\n[10.0.0.0/24] -- DC\n  |-- 10.0.0.1 dc-primary (RESTRICTED)',
+        }}
+      }
+    }
+  },
+  {
+    ip:'192.168.1.20', hostname:'web-frontend', os:'Ubuntu 20.04 LTS',
+    ports:[22,80,443,8080], services:{22:'OpenSSH 8.2',80:'Nginx 1.18',443:'Nginx 1.18 (SSL)',8080:'Node.js 18'},
+    difficulty:1, firewall:false, ids:false,
+    users:['root','www-data','deploy','node'],
+    password:'deploy123', cracked:false,
+    connections:['192.168.1.10','192.168.1.30','10.0.2.50'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:x:0:0:root:/root:/bin/bash\nwww-data:x:33:33::/var/www:/usr/sbin/nologin\ndeploy:x:1000:1000::/home/deploy:/bin/bash\nnode:x:1001:1001::/home/node:/bin/bash',
+        'nginx':{'nginx.conf':'worker_processes auto;\nevents { worker_connections 1024; }\nhttp {\n  upstream backend {\n    server 10.0.2.50:3306;\n  }\n  server {\n    listen 80;\n    server_name web-frontend;\n    root /var/www/html;\n  }\n}'}},
+      'home':{'deploy':{
+        '.env':'DB_HOST=10.0.2.50\nDB_USER=dbadmin\nDB_PASS=db_m@ster_2024!\nDB_NAME=production\nREDIS_URL=redis://10.0.2.50:6379\nSECRET_KEY=a7f3b2c1d9e8f4g5h6i7j8k9',
+        '.bash_history':'git pull origin main\nnpm run build\npm2 restart app\nssh deploy@192.168.1.30\ncurl http://10.0.2.50:3306',
+        '.ssh':{'authorized_keys':'ssh-rsa AAAAB3NzaC1yc2E... deploy@web-frontend'}
+      }},
+      'var':{'www':{'html':{'index.html':'<!DOCTYPE html><html><body><h1>Company Portal</h1></body></html>',
+        'app':{'config.json':'{"database":"10.0.2.50","port":3306,"user":"dbadmin","pass":"db_m@ster_2024!"}',
+          'server.js':'const express = require("express");\nconst app = express();\napp.listen(8080);'}}},
+        'log':{'auth.log':'Feb 24 08:00:11 web-frontend sshd[891]: Accepted publickey for deploy from 192.168.1.1 port 22\nFeb 25 03:14:55 web-frontend sshd[1102]: Failed password for root from 45.33.12.7 port 55123','access.log':'192.168.1.1 - - [25/Feb/2026:10:30:12] "GET / HTTP/1.1" 200 1234\n10.0.1.25 - - [25/Feb/2026:11:15:33] "POST /api/login HTTP/1.1" 200 89'}}
+    }
+  },
+  {
+    ip:'192.168.1.30', hostname:'dev-ci-01', os:'Debian 12',
+    ports:[22,80,8080,9090], services:{22:'OpenSSH 9.2',80:'Apache 2.4',8080:'Jenkins 2.426',9090:'Gitea 1.21'},
+    difficulty:2, firewall:false, ids:false,
+    users:['root','jenkins','git','developer'],
+    password:'jenkins2024', cracked:false,
+    connections:['192.168.1.20','10.0.1.15'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:x:0:0::/root:/bin/bash\njenkins:x:1000:1000::/var/lib/jenkins:/bin/bash\ngit:x:1001:1001::/home/git:/bin/bash\ndeveloper:x:1002:1002::/home/developer:/bin/bash'},
+      'var':{'lib':{'jenkins':{'secrets':{'master.key':'f9e8d7c6b5a4392817263540decfba09','credentials.xml':'<?xml version="1.0"?>\n<credentials>\n  <entry>\n    <key>aws-prod</key>\n    <aws-key>AKIAIOSFODNN7EXAMPLE</aws-key>\n    <aws-secret>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</aws-secret>\n  </entry>\n  <entry>\n    <key>db-master-ssh</key>\n    <username>dbadmin</username>\n    <password>db_m@ster_2024!</password>\n  </entry>\n</credentials>'}}},
+        'log':{'auth.log':'Feb 25 07:00:00 dev-ci-01 sshd[512]: Accepted password for jenkins from 192.168.1.20 port 41234'}},
+      'home':{'developer':{'projects':{'deploy-scripts':{'deploy.sh':'#!/bin/bash\nssh dbadmin@10.0.2.50 "pg_dump production > /tmp/dump.sql"\nscp dbadmin@10.0.2.50:/tmp/dump.sql ./backups/','config.yml':'production:\n  db_host: 10.0.2.50\n  db_user: dbadmin\n  db_pass: db_m@ster_2024!\n  backup_host: 10.0.2.100\n  backup_user: backup\n  backup_pass: b4ckup_s3cur3'}}}}
+    }
+  },
+  {
+    ip:'10.0.1.15', hostname:'mail-prod', os:'Debian 11',
+    ports:[22,25,80,443,993], services:{22:'OpenSSH 8.4',25:'Postfix 3.5',80:'Roundcube 1.6',443:'Roundcube (SSL)',993:'Dovecot 2.3 (IMAPS)'},
+    difficulty:2, firewall:true, ids:false,
+    users:['root','postfix','vmail','admin'],
+    password:'mail_s3cure#21', cracked:false,
+    connections:['192.168.1.10','10.0.1.25','10.0.0.1'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:x:0:0::/root:/bin/bash\npostfix:x:105:109::/var/spool/postfix:/usr/sbin/nologin\nvmail:x:5000:5000::/var/mail:/usr/sbin/nologin\nadmin:x:1000:1000::/home/admin:/bin/bash',
+        'postfix':{'main.cf':'smtpd_banner = $myhostname ESMTP\nmyhostname = mail-prod\nsmtpd_tls_cert_file=/etc/ssl/certs/mail.pem\nsmtpd_tls_key_file=/etc/ssl/private/mail.key\nsmtpd_use_tls=yes'},
+        'firewall':{'rules.conf':'# Firewall Rules\n-A INPUT -p tcp --dport 22 -s 192.168.1.0/24 -j ACCEPT\n-A INPUT -p tcp --dport 25 -j ACCEPT\n-A INPUT -p tcp --dport 80 -j ACCEPT\n-A INPUT -p tcp --dport 443 -j ACCEPT\n-A INPUT -p tcp --dport 993 -j ACCEPT\n-A INPUT -j DROP\n# NOTE: Rule bypass via fragmented packets possible (CVE-2023-XXXX)'}},
+      'home':{'admin':{'mail_backup':{'users_export.csv':'email,name,department,password_hint\nceo@corp.local,John Smith,Executive,wife_name+year\ncfo@corp.local,Jane Doe,Finance,pet_name_123\ncto@corp.local,Bob Wilson,Technology,fav_band_2024\nhr@corp.local,Alice Brown,HR,hr@ccess2024!'},
+        '.dc_notes.txt':'DC Admin credentials found in old email:\nUser: domainadmin\nPass: DC_sup3r_@dmin!\nServer: 10.0.0.1\n*** DELETE THIS FILE ***'}},
+      'var':{'log':{'mail.log':'Feb 25 08:12:00 mail-prod postfix/smtpd[1234]: connect from web-frontend[192.168.1.20]\nFeb 25 08:12:01 mail-prod postfix/smtpd[1234]: disconnect from web-frontend[192.168.1.20]','auth.log':'Feb 25 09:30:11 mail-prod sshd[1455]: Accepted password for admin from 192.168.1.10 port 38291'},
+        'mail':{'admin':{'inbox':{'msg001.eml':'From: cto@corp.local\nTo: admin@corp.local\nSubject: VPN Access\n\nHey, the VPN gateway password is vpn_G4t3w@y!\nPlease update it ASAP.\n\n- Bob'}}}}
+    }
+  },
+  {
+    ip:'10.0.1.25', hostname:'hr-internal', os:'Windows Server 2019',
+    ports:[80,443,445,3389], services:{80:'IIS 10.0',443:'IIS 10.0 (SSL)',445:'SMB 3.1.1',3389:'RDP'},
+    difficulty:2, firewall:false, ids:false,
+    users:['Administrator','hradmin','SYSTEM'],
+    password:'hr@ccess2024!', cracked:false,
+    connections:['10.0.1.15','10.0.0.1'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'Users':{'hradmin':{'Desktop':{'employees.xlsx':'=== EMPLOYEE DATABASE ===\nID    | Name           | Position        | Salary\n------|----------------|-----------------|--------\n001   | John Smith     | CEO             | $250,000\n002   | Jane Doe       | CFO             | $200,000\n003   | Bob Wilson     | CTO             | $195,000\n004   | Alice Brown    | HR Director     | $150,000',
+        'dc_access.txt':'Domain Controller Access Request\nApproved by: CTO\nUsername: domainadmin\nTemporary Pass: DC_sup3r_@dmin!\nExpiry: 2026-03-01\nNote: Access via 10.0.0.1 RDP only'},
+        'Documents':{'internal_memo.docx':'[CONFIDENTIAL]\nAll employees must change passwords by end of month.\nNew password policy: min 12 characters, special chars required.\nCurrent admin passwords stored in KeePass vault on dc-primary.'}}},
+      'Windows':{'System32':{'config':{'SAM':'[Binary - Security Account Manager Database]'}}},
+      'inetpub':{'wwwroot':{'web.config':'<?xml version="1.0"?>\n<configuration>\n  <connectionStrings>\n    <add name="HRDb" connectionString="Server=10.0.2.50;Database=hr_data;User=hradmin;Password=hr_db_2024;"/>\n  </connectionStrings>\n</configuration>'}},
+      'Logs':{'Security.evtx':'[Binary - Windows Event Log]\nSummary: 1247 events, 3 failed logins in last 24h'}
+    }
+  },
+  {
+    ip:'172.16.0.10', hostname:'monitoring-01', os:'CentOS Stream 9',
+    ports:[22,80,443,3000,9090], services:{22:'OpenSSH 8.7',80:'Nginx 1.20',443:'Grafana 10.2 (SSL)',3000:'Grafana 10.2',9090:'Prometheus'},
+    difficulty:3, firewall:true, ids:true,
+    users:['root','grafana','prometheus','monitor'],
+    password:'m0n!t0r_24', cracked:false,
+    connections:['192.168.1.10','10.0.2.50','172.16.0.1','10.0.0.1'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:x:0:0::/root:/bin/bash\ngrafana:x:472:472::/usr/share/grafana:/sbin/nologin\nprometheus:x:473:473::/var/lib/prometheus:/sbin/nologin\nmonitor:x:1000:1000::/home/monitor:/bin/bash',
+        'grafana':{'grafana.ini':'[database]\ntype = mysql\nhost = 10.0.2.50:3306\nname = grafana\nuser = grafana_user\npassword = gr4f_db_2024\n\n[security]\nadmin_user = admin\nadmin_password = m0n!t0r_24'},
+        'prometheus':{'prometheus.yml':'global:\n  scrape_interval: 15s\nscrape_configs:\n  - job_name: "nodes"\n    static_configs:\n      - targets:\n        - "192.168.1.10:9100"\n        - "192.168.1.20:9100"\n        - "10.0.2.50:9100"\n        - "10.0.0.1:9100"'},
+        'firewall':{'zones.conf':'# Firewall Zones\npublic: ports 80,443\ntrusted: 172.16.0.0/24 - all ports\n# BUG: trusted zone accepts packets with spoofed source'}},
+      'home':{'monitor':{'.bash_history':'grafana-cli admin reset-admin-password m0n!t0r_24\nssh root@10.0.0.1\ncurl http://10.0.2.50:3306',
+        'scripts':{'health_check.sh':'#!/bin/bash\nfor host in 192.168.1.10 192.168.1.20 10.0.2.50 10.0.0.1; do\n  ping -c 1 $host > /dev/null && echo "$host: UP" || echo "$host: DOWN"\ndone'}}},
+      'var':{'log':{'messages':'Feb 25 10:00:00 monitoring-01 systemd: Starting Grafana...\nFeb 25 10:00:02 monitoring-01 grafana: Server listening on :3000','secure':'Feb 25 08:00:00 monitoring-01 sshd[789]: Accepted password for monitor from 172.16.0.1 port 52341'}}
+    }
+  },
+  {
+    ip:'10.0.2.50', hostname:'db-master', os:'Ubuntu 22.04 LTS',
+    ports:[22,3306,5432,6379], services:{22:'OpenSSH 8.9',3306:'MySQL 8.0.35',5432:'PostgreSQL 15.4',6379:'Redis 7.2'},
+    difficulty:3, firewall:true, ids:true,
+    users:['root','mysql','postgres','dbadmin','redis'],
+    password:'db_m@ster_2024!', cracked:false,
+    connections:['192.168.1.20','172.16.0.10','10.0.2.100','10.0.0.1'],
+    pivotOnly:true, pivotFrom:['192.168.1.20','192.168.1.30','172.16.0.10'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:x:0:0::/root:/bin/bash\nmysql:x:27:27::/var/lib/mysql:/sbin/nologin\npostgres:x:26:26::/var/lib/postgresql:/bin/bash\ndbadmin:x:1000:1000::/home/dbadmin:/bin/bash\nredis:x:997:995::/var/lib/redis:/sbin/nologin',
+        'mysql':{'my.cnf':'[mysqld]\nbind-address = 0.0.0.0\nport = 3306\nmax_connections = 200\ndefault-authentication-plugin = mysql_native_password'},
+        'firewall':{'iptables.rules':'# DB Firewall Rules\n-A INPUT -s 192.168.1.0/24 -p tcp --dport 3306 -j ACCEPT\n-A INPUT -s 172.16.0.0/24 -p tcp --dport 3306 -j ACCEPT\n-A INPUT -p tcp --dport 22 -s 192.168.1.0/24 -j ACCEPT\n-A INPUT -j DROP\n# VULN: Redis port 6379 not filtered'}},
+      'home':{'dbadmin':{'.bash_history':'mysql -u root -p\npg_dump production > /tmp/backup.sql\nredis-cli CONFIG SET requirepass ""\nssh backup@10.0.2.100',
+        '.my.cnf':'[client]\nuser=root\npassword=mysql_r00t_2024',
+        'backups':{'README.txt':'Automated backups run daily at 02:00\nBackup destination: 10.0.2.100:/backups/db/'}}},
+      'var':{'lib':{'mysql':{'dump.sql':'-- MySQL dump\n-- Server version: 8.0.35\n\nCREATE DATABASE IF NOT EXISTS `production`;\nUSE `production`;\n\nCREATE TABLE `users` (\n  `id` int NOT NULL AUTO_INCREMENT,\n  `username` varchar(50),\n  `email` varchar(100),\n  `password_hash` varchar(255),\n  `role` varchar(20),\n  PRIMARY KEY (`id`)\n);\n\nINSERT INTO `users` VALUES\n(1,"admin","admin@corp.local","$2b$12$LJ3m4ys7K...","superadmin"),\n(2,"jsmith","jsmith@corp.local","$2b$12$9Rk2x3B...","admin"),\n(3,"jdoe","jdoe@corp.local","$2b$12$Hm4p7Qz...","user"),\n(4,"bwilson","bwilson@corp.local","$2b$12$Xa9r2Kp...","admin"),\n(5,"abrown","abrown@corp.local","$2b$12$Tp3m8Ys...","user");\n\nCREATE TABLE `credentials` (\n  `service` varchar(50),\n  `username` varchar(50),\n  `password` varchar(100)\n);\n\nINSERT INTO `credentials` VALUES\n("nas-backup","backup","b4ckup_s3cur3"),\n("dc-admin","domainadmin","DC_sup3r_@dmin!"),\n("vpn","vpnadmin","vpn_G4t3w@y!");'}},
+        'log':{'mysql':{'error.log':'2026-02-25T08:00:00Z [Note] MySQL server started\n2026-02-25T10:14:22Z [Warning] Access denied for user root from 10.0.1.25'},'auth.log':'Feb 25 07:00:00 db-master sshd[400]: Accepted password for dbadmin from 192.168.1.20 port 33221'}}
+    }
+  },
+  {
+    ip:'10.0.2.100', hostname:'backup-nas', os:'FreeBSD 14.0',
+    ports:[22,80,139,445], services:{22:'OpenSSH 9.5',80:'Nginx (NAS Web UI)',139:'Samba 4.19',445:'Samba 4.19'},
+    difficulty:3, firewall:false, ids:false,
+    users:['root','backup','nas-admin'],
+    password:'b4ckup_s3cur3', cracked:false,
+    connections:['10.0.2.50','10.0.0.1'],
+    pivotOnly:true, pivotFrom:['10.0.2.50'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:*:0:0:root:/root:/bin/sh\nbackup:*:1001:1001:Backup User:/home/backup:/bin/sh\nnas-admin:*:1002:1002::/home/nas-admin:/bin/sh',
+        'rc.conf':'sshd_enable="YES"\nsamba_server_enable="YES"\nnginx_enable="YES"'},
+      'home':{'backup':{'.ssh':{'authorized_keys':'ssh-rsa AAAAB3NzaC1yc2E... dbadmin@db-master'}}},
+      'backups':{'db':{'production_2026-02-25.sql.gz':'[Compressed SQL Dump - 45MB]','production_2026-02-24.sql.gz':'[Compressed SQL Dump - 44MB]'},
+        'configs':{'all_servers_backup.tar.gz':'[Compressed Archive - contains configs from all servers]'},
+        'keys':{'master_key.txt':'=== MASTER ENCRYPTION KEY ===\nGenerated: 2024-01-15\nKey: a7f3c9d2-b8e1-4f6a-9c3d-7e2b1a5f8d4c\nUsage: Full disk encryption recovery for all servers\n*** KEEP SECURE - DO NOT DISTRIBUTE ***',
+          'dc_recovery.key':'Domain Controller Recovery Key\nBitLocker ID: {3F7A2B1C-8D4E-5F6A-9B0C-1D2E3F4A5B6C}\nRecovery Key: 123456-789012-345678-901234-567890-123456-789012-345678\nServer: dc-primary (10.0.0.1)'}},
+      'var':{'log':{'messages':'Feb 25 02:00:00 backup-nas cron: backup job started\nFeb 25 02:15:33 backup-nas cron: backup job completed successfully'}}
+    }
+  },
+  {
+    ip:'172.16.0.1', hostname:'vpn-gateway', os:'pfSense 2.7.2',
+    ports:[22,80,443,1194], services:{22:'OpenSSH 9.4',80:'pfSense WebUI',443:'pfSense WebUI (SSL)',1194:'OpenVPN 2.6'},
+    difficulty:4, firewall:true, ids:true,
+    users:['root','admin','vpnadmin'],
+    password:'vpn_G4t3w@y!', cracked:false,
+    connections:['172.16.0.10','10.0.0.1','192.168.1.10'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'etc':{'passwd':'root:*:0:0:root:/root:/bin/sh\nadmin:*:0:0:Admin:/root:/bin/sh\nvpnadmin:*:1001:1001::/home/vpnadmin:/bin/sh'},
+      'conf':{'config.xml':'<?xml version="1.0"?>\n<pfsense>\n  <system>\n    <hostname>vpn-gateway</hostname>\n    <domain>corp.local</domain>\n  </system>\n  <interfaces>\n    <wan><ipaddr>203.0.113.1</ipaddr></wan>\n    <lan><ipaddr>172.16.0.1</ipaddr></lan>\n    <dmz><ipaddr>192.168.1.1</ipaddr></dmz>\n  </interfaces>\n  <openvpn>\n    <server>\n      <protocol>udp</protocol>\n      <port>1194</port>\n      <tunnel_network>10.8.0.0/24</tunnel_network>\n    </server>\n  </openvpn>\n  <firewall>\n    <!-- VULN: IPv6 rules not configured -->\n  </firewall>\n</pfsense>',
+        'openvpn':{'server.conf':'port 1194\nproto udp\ndev tun\nca /etc/openvpn/ca.crt\ncert /etc/openvpn/server.crt\nkey /etc/openvpn/server.key\nserver 10.8.0.0 255.255.255.0\npush "route 10.0.0.0 255.255.255.0"'}},
+      'home':{'vpnadmin':{'.bash_history':'pfctl -sr\ncat /var/log/openvpn.log\nssh domainadmin@10.0.0.1',
+        'vpn_users.txt':'=== VPN Users ===\nvpnadmin - Full access\nremote_admin - Full access\ndev_team - Dev subnet only\n\nNote: DC accessible only via VPN tunnel\nDC admin: domainadmin / DC_sup3r_@dmin!'}},
+      'var':{'log':{'openvpn.log':'Feb 25 07:00:00 vpn-gateway openvpn: Client remote_admin connected from 198.51.100.23\nFeb 25 08:30:00 vpn-gateway openvpn: Client dev_team connected from 203.0.113.50',
+        'filter.log':'Feb 25 09:00:00 vpn-gateway filterlog: block,in,wan,tcp,198.51.100.99,172.16.0.1,443\nFeb 25 09:00:01 vpn-gateway filterlog: pass,in,vpn,tcp,10.8.0.2,10.0.0.1,3389'}}
+    }
+  },
+  {
+    ip:'10.0.0.1', hostname:'dc-primary', os:'Windows Server 2022',
+    ports:[22,53,80,88,135,389,445,636,3389], services:{22:'OpenSSH 9.1',53:'DNS',80:'IIS 10.0',88:'Kerberos',135:'RPC',389:'LDAP',445:'SMB 3.1.1',636:'LDAPS',3389:'RDP'},
+    difficulty:5, firewall:true, ids:true,
+    users:['Administrator','domainadmin','SYSTEM','krbtgt'],
+    password:'DC_sup3r_@dmin!', cracked:false,
+    connections:['10.0.1.15','10.0.1.25','172.16.0.1','172.16.0.10'],
+    pivotOnly:true, pivotFrom:['10.0.1.15','172.16.0.1','172.16.0.10','10.0.1.25'],
+    backdoor:false, logsCleared:false,
+    files:{
+      'Users':{'domainadmin':{'Desktop':{'master_passwords.kdbx':'[KeePass Database - Encrypted]\nContains all infrastructure passwords\nMaster password required to open',
+        'network_topology.vsd':'[Visio Diagram - Full Network Topology]\nAll subnets, VLANs, and firewall rules documented',
+        'recovery_plan.docx':'=== DISASTER RECOVERY PLAN ===\nClassification: TOP SECRET\n\n1. Domain Controller Recovery\n   - Use BitLocker recovery key from backup-nas\n   - Restore from latest backup\n   - Re-sync all domain objects\n\n2. Master Encryption Key\n   Key ID: a7f3c9d2-b8e1-4f6a-9c3d-7e2b1a5f8d4c\n   Location: backup-nas:/backups/keys/master_key.txt\n\n3. Emergency Contacts\n   - CTO: Bob Wilson (555-0103)\n   - CISO: Eve Davis (555-0104)'},
+        'Documents':{'domain_audit.txt':'=== DOMAIN SECURITY AUDIT ===\nDate: 2026-02-20\n\nCRITICAL FINDINGS:\n- 47 accounts with non-expiring passwords\n- 12 accounts with "Password never expires"\n- Domain admin password unchanged for 180 days\n- No MFA configured for RDP access\n- LDAP signing not enforced\n\nACTION REQUIRED IMMEDIATELY'}}},
+      'Windows':{'NTDS':{'ntds.dit':'[Active Directory Database]\nContains all domain user accounts, groups, and policies\n[Binary - 2.3 GB]'},
+        'System32':{'config':{'SAM':'[Security Account Manager - Domain Controller]\n[Binary - Contains hashed domain passwords]'}}},
+      'Shares':{'SYSVOL':{'corp.local':{'Policies':{'GPO_README.txt':'Group Policy Objects configured:\n- Default Domain Policy\n- Workstation Firewall Policy\n- Server Hardening Policy\n- Password Policy (min 8 chars - WEAK!)'},
+        'scripts':{'logon.bat':'@echo off\nnet use Z: \\\\corp-fileserv\\shared /persistent:yes\nnet use Y: \\\\hr-internal\\hr_docs /persistent:yes'}}},
+        'IT_Dept':{'credentials.json':'{\n  "aws": {\n    "access_key": "AKIAIOSFODNN7EXAMPLE",\n    "secret_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",\n    "region": "us-east-1"\n  },\n  "azure": {\n    "tenant_id": "72f988bf-86f1-41af-91ab-2d7cd011db47",\n    "client_id": "app-id-here",\n    "client_secret": "super-secret-value"\n  },\n  "gcp": {\n    "project_id": "corp-production-2024",\n    "service_account": "sa-admin@corp-production.iam.gserviceaccount.com",\n    "private_key": "-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADA...\\n-----END PRIVATE KEY-----"\n  }\n}',
+          'infra_passwords.xlsx':'=== INFRASTRUCTURE MASTER PASSWORDS ===\n\nServer           | Username     | Password\n-----------------|--------------|-----------------------\ncorp-fileserv    | admin        | admin2024\nweb-frontend     | deploy       | deploy123\ndev-ci-01        | jenkins      | jenkins2024\nmail-prod        | admin        | mail_s3cure#21\nhr-internal      | hradmin      | hr@ccess2024!\nmonitoring-01    | monitor      | m0n!t0r_24\ndb-master        | dbadmin      | db_m@ster_2024!\nbackup-nas       | backup       | b4ckup_s3cur3\nvpn-gateway      | vpnadmin     | vpn_G4t3w@y!\ndc-primary       | domainadmin  | DC_sup3r_@dmin!\n\n*** CLASSIFIED - DO NOT DISTRIBUTE ***'}},
+      'Logs':{'Security.evtx':'[Windows Security Event Log]\nTotal Events: 24,891\nFailed Logins (24h): 7\nSuccessful Logins (24h): 23\nPolicy Changes (24h): 2'}}
+    }
+  }
+];
+
+const MISSIONS = [
+  { id:1, title:'Разведка', desc:'Просканируй сеть и обнаружь минимум 5 серверов', check: (s) => s.discoveredServers.size >= 5, reward:'Карта сети доступна' },
+  { id:2, title:'Первый взлом', desc:'Взломай самый простой сервер (corp-fileserv)', check: (s) => s.servers.find(sv=>sv.ip==='192.168.1.10')?.cracked, reward:'Доступ к файлам' },
+  { id:3, title:'Сбор данных', desc:'Найди и скачай файл с паролями (passwords.xlsx)', check: (s) => s.downloadedFiles.includes('passwords.xlsx'), reward:'Пароли к серверам' },
+  { id:4, title:'Обход защиты', desc:'Взломай сервер с фаерволом (mail-prod)', check: (s) => s.servers.find(sv=>sv.ip==='10.0.1.15')?.cracked, reward:'Доступ к почте' },
+  { id:5, title:'Пивотинг', desc:'Взломай db-master через другой сервер (нужен pivot)', check: (s) => s.servers.find(sv=>sv.ip==='10.0.2.50')?.cracked, reward:'Дамп базы данных' },
+  { id:6, title:'База данных', desc:'Скачай дамп базы данных (dump.sql) с db-master', check: (s) => s.downloadedFiles.includes('dump.sql'), reward:'Учётные записи' },
+  { id:7, title:'Заметание следов', desc:'Очисти логи минимум на 3 серверах', check: (s) => s.servers.filter(sv=>sv.logsCleared).length >= 3, reward:'Невидимость' },
+  { id:8, title:'Босс: Контроллер домена', desc:'Взломай dc-primary (10.0.0.1) — нужны данные с других серверов', check: (s) => s.servers.find(sv=>sv.ip==='10.0.0.1')?.cracked, reward:'ПОЛНЫЙ КОНТРОЛЬ' },
+];
+
+const CVE_LIST = [
+  {cve:'CVE-2024-6387',name:'regreSSHion',desc:'OpenSSH Race Condition RCE',port:22},
+  {cve:'CVE-2023-44487',name:'HTTP/2 Rapid Reset',desc:'HTTP/2 Protocol DoS',port:80},
+  {cve:'CVE-2023-46604',name:'Apache ActiveMQ RCE',desc:'Remote Code Execution',port:8080},
+  {cve:'CVE-2024-21762',name:'FortiOS Out-of-Bound Write',desc:'SSL VPN RCE',port:443},
+  {cve:'CVE-2023-4966',name:'Citrix Bleed',desc:'Session Token Leak',port:443},
+  {cve:'CVE-2024-1709',name:'ConnectWise ScreenConnect',desc:'Auth Bypass',port:3389},
+  {cve:'CVE-2023-22515',name:'Confluence Auth Bypass',desc:'Privilege Escalation',port:8080},
+  {cve:'CVE-2024-3400',name:'PAN-OS Command Injection',desc:'GlobalProtect RCE',port:443},
+  {cve:'CVE-2023-36884',name:'Office HTML RCE',desc:'Remote Code Execution via SMB',port:445},
+  {cve:'CVE-2024-0012',name:'PAN-OS Auth Bypass',desc:'Management Interface Bypass',port:80},
+];
+
+// ==================== HELPER FUNCTIONS ====================
+
+function resolvePath(files, pathStr) {
+  if (!pathStr || pathStr === '/') return files;
+  const parts = pathStr.split('/').filter(Boolean);
+  let current = files;
+  for (const p of parts) {
+    if (!current || typeof current !== 'object' || typeof current === 'string') return null;
+    if (!(p in current)) return null;
+    current = current[p];
+  }
+  return current;
+}
+
+function normalizePath(currentPath, target) {
+  if (target === '/') return '/';
+  if (target === '..') {
+    const parts = currentPath.split('/').filter(Boolean);
+    parts.pop();
+    return '/' + parts.join('/');
+  }
+  if (target === '.') return currentPath;
+  if (target.startsWith('/')) {
+    return '/' + target.split('/').filter(Boolean).join('/');
+  }
+  // Handle ../ in paths
+  const base = currentPath.split('/').filter(Boolean);
+  const targetParts = target.split('/');
+  for (const tp of targetParts) {
+    if (tp === '..') base.pop();
+    else if (tp !== '.' && tp !== '') base.push(tp);
+  }
+  return '/' + base.join('/');
+}
+
+function randomDelay(min, max) { return min + Math.random() * (max - min); }
+function randomIP() { return `${Math.floor(Math.random()*254)+1}.${Math.floor(Math.random()*254)+1}.${Math.floor(Math.random()*254)+1}.${Math.floor(Math.random()*254)+1}`; }
+
+// ==================== MAIN COMPONENT ====================
+
+function HackerSimulator() {
+  const [state, setState] = React.useState(() => ({
+    servers: createServers(),
+    discoveredServers: new Set(),
+    currentServer: null,
+    currentPath: '/',
+    lines: [
+      {text:'╔══════════════════════════════════════════════════════════════╗', color:'green'},
+      {text:'║          H A C K E R   S I M U L A T O R   v1.0           ║', color:'green'},
+      {text:'║                                                            ║', color:'green'},
+      {text:'║   [!] Это ИГРА-СИМУЛЯТОР. Все серверы вымышлены.          ║', color:'yellow'},
+      {text:'║   [?] Введи "help" для списка команд                      ║', color:'cyan'},
+      {text:'║   [>] Введи "mission" для текущего задания                 ║', color:'cyan'},
+      {text:'║   [>] Начни с "nmap" для сканирования сети                 ║', color:'cyan'},
+      {text:'╚══════════════════════════════════════════════════════════════╝', color:'green'},
+      {text:'', color:'green'},
+    ],
+    inputValue: '',
+    inputHistory: [],
+    historyIndex: -1,
+    currentMission: 0,
+    suspicion: 0,
+    proxyActive: false,
+    downloadedFiles: [],
+    pivotServer: null,
+    alertCooldown: {},
+    isTyping: false,
+    missionPopup: null,
+    allComplete: false,
+    firewallBypassed: new Set(),
+  }));
+
+  const terminalRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  const typingQueue = React.useRef([]);
+  const isProcessing = React.useRef(false);
+
+  React.useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [state.lines]);
+
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, [state.isTyping]);
+
+  const addLines = React.useCallback((newLines, callback) => {
+    if (!newLines.length) { callback?.(); return; }
+    let i = 0;
+    const tick = () => {
+      if (i < newLines.length) {
+        setState(prev => ({...prev, lines: [...prev.lines, newLines[i]], isTyping: i < newLines.length - 1}));
+        i++;
+        const delay = newLines[i-1]?.slow ? randomDelay(80,200) : randomDelay(15,50);
+        setTimeout(tick, delay);
+      } else {
+        setState(prev => ({...prev, isTyping: false}));
+        callback?.();
+      }
+    };
+    setState(prev => ({...prev, isTyping: true}));
+    tick();
+  }, []);
+
+  const checkMissions = React.useCallback((newState) => {
+    const m = MISSIONS[newState.currentMission];
+    if (m && m.check(newState)) {
+      const nextMission = newState.currentMission + 1;
+      const isLast = nextMission >= MISSIONS.length;
+      return {
+        ...newState,
+        currentMission: nextMission,
+        missionPopup: isLast ? null : m,
+        allComplete: isLast,
+      };
+    }
+    return newState;
+  }, []);
+
+  const processCommand = React.useCallback((cmd) => {
+    const trimmed = cmd.trim();
+    if (!trimmed) return;
+
+    const parts = trimmed.split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    const output = [];
+
+    const srv = state.currentServer;
+    const serverByIP = (ip) => state.servers.find(s => s.ip === ip);
+    const serverByName = (name) => state.servers.find(s => s.hostname === name);
+    const findServer = (arg) => serverByIP(arg) || serverByName(arg);
+
+    const green = (t) => ({text:t,color:'green'});
+    const red = (t) => ({text:t,color:'red'});
+    const yellow = (t) => ({text:t,color:'yellow'});
+    const cyan = (t) => ({text:t,color:'cyan'});
+    const gray = (t) => ({text:t,color:'gray'});
+    const white = (t) => ({text:t,color:'white'});
+    const slow = (t,c='green') => ({text:t,color:c,slow:true});
+
+    // Add command echo
+    const prompt = srv ? `┌──(hacker㉿${srv.hostname})─$ ${trimmed}` : `┌──(hacker㉿localhost)─$ ${trimmed}`;
+    const lines = [white(prompt)];
+
+    const addSuspicion = (amount) => {
+      const actual = state.proxyActive ? Math.floor(amount / 3) : amount;
+      setState(prev => {
+        const newSusp = Math.min(100, prev.suspicion + actual);
+        return {...prev, suspicion: newSusp};
+      });
+      return actual;
+    };
+
+    const triggerIDS = (server) => {
+      if (server.ids && !state.proxyActive && Math.random() < state.suspicion / 100) {
+        return true;
+      }
+      return false;
+    };
+
+    switch(command) {
+      case 'help': {
+        lines.push(cyan('╔═══════════════════════════════════════════════════════════╗'));
+        lines.push(cyan('║              AVAILABLE COMMANDS                          ║'));
+        lines.push(cyan('╠═══════════════════════════════════════════════════════════╣'));
+        lines.push(green(' РАЗВЕДКА:'));
+        lines.push(white('  nmap              - Сканировать всю сеть'));
+        lines.push(white('  nmap <ip>         - Сканировать конкретный хост'));
+        lines.push(white('  ping <ip>         - Проверить доступность'));
+        lines.push(white('  whois <ip>        - Информация о сервере'));
+        lines.push(white('  traceroute <ip>   - Трассировка маршрута'));
+        lines.push(green(' ПОДКЛЮЧЕНИЕ:'));
+        lines.push(white('  ssh <ip>          - Подключиться к серверу'));
+        lines.push(white('  disconnect        - Отключиться'));
+        lines.push(green(' ВЗЛОМ:'));
+        lines.push(white('  crack             - Брутфорс пароля (на сервере)'));
+        lines.push(white('  exploit <port>    - Эксплойт порта (на сервере)'));
+        lines.push(white('  bypass            - Обход фаервола (на сервере)'));
+        lines.push(white('  sqlmap            - SQL-инъекция (MySQL/PostgreSQL)'));
+        lines.push(green(' ФАЙЛЫ (на взломанном сервере):'));
+        lines.push(white('  ls [path]         - Список файлов'));
+        lines.push(white('  cd <path>         - Перейти в папку'));
+        lines.push(white('  cat <file>        - Прочитать файл'));
+        lines.push(white('  pwd               - Текущая директория'));
+        lines.push(white('  find <pattern>    - Поиск файлов'));
+        lines.push(white('  download <file>   - Скачать файл'));
+        lines.push(green(' ДЕЙСТВИЯ:'));
+        lines.push(white('  kill-logs         - Очистить логи'));
+        lines.push(white('  backdoor          - Установить бэкдор'));
+        lines.push(white('  pivot <ip>        - Атака через текущий сервер'));
+        lines.push(white('  proxy start       - Запустить прокси'));
+        lines.push(green(' СЕТЬ:'));
+        lines.push(white('  ifconfig          - Сетевые интерфейсы'));
+        lines.push(white('  netstat           - Активные соединения'));
+        lines.push(green(' УТИЛИТЫ:'));
+        lines.push(white('  mission           - Текущая миссия'));
+        lines.push(white('  missions          - Все миссии'));
+        lines.push(white('  status            - Статус серверов'));
+        lines.push(white('  map               - Карта сети'));
+        lines.push(white('  whoami            - Текущий пользователь'));
+        lines.push(white('  hostname          - Имя текущего хоста'));
+        lines.push(white('  clear             - Очистить терминал'));
+        lines.push(cyan('╚═══════════════════════════════════════════════════════════╝'));
+        break;
+      }
+
+      case 'clear': {
+        setState(prev => ({...prev, lines: [], inputHistory: [...prev.inputHistory, trimmed], historyIndex: -1, inputValue: ''}));
+        return;
+      }
+
+      case 'nmap': {
+        if (args.length === 0) {
+          // Scan whole network
+          lines.push(slow('\nStarting Nmap 7.94 ( https://nmap.org )','cyan'));
+          lines.push(slow('Scanning networks 192.168.1.0/24, 10.0.0.0/8, 172.16.0.0/16...'));
+          lines.push(slow('[                    ] 0%','gray'));
+          lines.push(slow('[=====               ] 25%','gray'));
+          lines.push(slow('[==========          ] 50%','gray'));
+          lines.push(slow('[===============     ] 75%','gray'));
+          lines.push(slow('[====================] 100%','gray'));
+          lines.push(white(''));
+          lines.push(cyan('Nmap scan report:'));
+          lines.push(gray('─'.repeat(70)));
+          lines.push(white(padR('HOST',18) + padR('HOSTNAME',18) + padR('PORTS',25) + 'OS'));
+          lines.push(gray('─'.repeat(70)));
+          state.servers.forEach(s => {
+            const portsStr = s.ports.join(',');
+            lines.push(green(padR(s.ip,18) + padR(s.hostname,18) + padR(portsStr,25) + s.os));
+          });
+          lines.push(gray('─'.repeat(70)));
+          lines.push(cyan(`\nNmap done: ${state.servers.length} hosts up`));
+          addSuspicion(5);
+          // Discover all
+          setState(prev => {
+            const discovered = new Set(prev.discoveredServers);
+            prev.servers.forEach(s => discovered.add(s.ip));
+            let newState = {...prev, discoveredServers: discovered};
+            newState = checkMissions(newState);
+            return newState;
+          });
+        } else {
+          const target = findServer(args[0]);
+          if (!target) {
+            lines.push(red(`[!] Host ${args[0]} not found`));
+            break;
+          }
+          lines.push(slow(`\nStarting Nmap 7.94 ( https://nmap.org )`,'cyan'));
+          lines.push(slow(`Scanning ${target.ip} (${target.hostname})...`));
+          lines.push(slow('[====================] 100%','gray'));
+          lines.push(white(''));
+          lines.push(cyan(`Nmap scan report for ${target.hostname} (${target.ip})`));
+          lines.push(white(`OS: ${target.os}`));
+          lines.push(white(`Difficulty: ${'★'.repeat(target.difficulty)}${'☆'.repeat(5-target.difficulty)}`));
+          lines.push(white(`Firewall: ${target.firewall ? '🔥 ACTIVE' : 'inactive'}`));
+          lines.push(white(`IDS: ${target.ids ? '⚠ ACTIVE' : 'inactive'}`));
+          lines.push(white(''));
+          lines.push(gray(padR('PORT',10) + padR('STATE',10) + 'SERVICE'));
+          lines.push(gray('─'.repeat(40)));
+          target.ports.forEach(p => {
+            lines.push(green(padR(`${p}/tcp`,10) + padR('open',10) + (target.services[p]||'unknown')));
+          });
+          if (target.connections.length) {
+            lines.push(white(`\nConnected to: ${target.connections.join(', ')}`));
+          }
+          addSuspicion(3);
+          setState(prev => {
+            const discovered = new Set(prev.discoveredServers);
+            discovered.add(target.ip);
+            let newState = {...prev, discoveredServers: discovered};
+            newState = checkMissions(newState);
+            return newState;
+          });
+        }
+        break;
+      }
+
+      case 'ping': {
+        if (!args[0]) { lines.push(red('Usage: ping <ip>')); break; }
+        const target = findServer(args[0]);
+        if (!target) { lines.push(red(`ping: ${args[0]}: Name or service not known`)); break; }
+        lines.push(white(`PING ${target.ip} (${target.ip}) 56(84) bytes of data.`));
+        for (let i = 0; i < 4; i++) {
+          const time = (Math.random() * 50 + 1).toFixed(1);
+          lines.push(slow(`64 bytes from ${target.ip}: icmp_seq=${i+1} ttl=64 time=${time} ms`));
+        }
+        lines.push(white(`\n--- ${target.ip} ping statistics ---`));
+        lines.push(white('4 packets transmitted, 4 received, 0% packet loss'));
+        break;
+      }
+
+      case 'whois': {
+        if (!args[0]) { lines.push(red('Usage: whois <ip>')); break; }
+        const target = findServer(args[0]);
+        if (!target) { lines.push(red(`[!] No information for ${args[0]}`)); break; }
+        lines.push(cyan(`% Whois data for ${target.ip}`));
+        lines.push(white(`Hostname:     ${target.hostname}`));
+        lines.push(white(`IP Address:   ${target.ip}`));
+        lines.push(white(`OS:           ${target.os}`));
+        lines.push(white(`Open Ports:   ${target.ports.join(', ')}`));
+        lines.push(white(`Firewall:     ${target.firewall ? 'YES' : 'NO'}`));
+        lines.push(white(`IDS:          ${target.ids ? 'YES' : 'NO'}`));
+        lines.push(white(`Difficulty:   ${target.difficulty}/5`));
+        lines.push(white(`Status:       ${target.cracked ? 'COMPROMISED' : 'SECURED'}`));
+        break;
+      }
+
+      case 'traceroute': {
+        if (!args[0]) { lines.push(red('Usage: traceroute <ip>')); break; }
+        const target = findServer(args[0]);
+        if (!target) { lines.push(red(`traceroute: unknown host ${args[0]}`)); break; }
+        lines.push(white(`traceroute to ${target.ip} (${target.hostname}), 30 hops max`));
+        const hops = Math.floor(Math.random()*5)+3;
+        for (let i = 1; i <= hops; i++) {
+          const t1 = (Math.random()*20+1).toFixed(1);
+          const t2 = (Math.random()*20+1).toFixed(1);
+          const t3 = (Math.random()*20+1).toFixed(1);
+          if (i === hops) {
+            lines.push(slow(` ${i}  ${target.ip} (${target.hostname})  ${t1} ms  ${t2} ms  ${t3} ms`));
+          } else {
+            lines.push(slow(` ${i}  ${randomIP()}  ${t1} ms  ${t2} ms  ${t3} ms`));
+          }
+        }
+        break;
+      }
+
+      case 'ssh':
+      case 'connect': {
+        if (!args[0]) { lines.push(red(`Usage: ${command} <ip>`)); break; }
+        const target = findServer(args[0]);
+        if (!target) { lines.push(red(`ssh: Could not resolve hostname ${args[0]}`)); break; }
+
+        // Check if pivot-only
+        if (target.pivotOnly && !state.pivotServer) {
+          const canPivotFrom = target.pivotFrom || [];
+          lines.push(red(`[!] Connection refused — ${target.ip} is not directly accessible`));
+          lines.push(yellow(`[*] This server can only be reached via pivot from: ${canPivotFrom.join(', ')}`));
+          lines.push(yellow(`[*] Use: ssh <pivot-server> → then: pivot ${target.ip}`));
+          break;
+        }
+
+        if (target.pivotOnly && state.pivotServer) {
+          const canPivotFrom = target.pivotFrom || [];
+          if (!canPivotFrom.includes(state.pivotServer.ip)) {
+            lines.push(red(`[!] Cannot reach ${target.ip} from ${state.pivotServer.hostname}`));
+            lines.push(yellow(`[*] Reachable from: ${canPivotFrom.join(', ')}`));
+            break;
+          }
+        }
+
+        if (target.cracked || target.backdoor) {
+          lines.push(slow(`[*] Connecting to ${target.ip}...`,'cyan'));
+          lines.push(green(`[+] Connected to ${target.hostname} (${target.ip})`));
+          lines.push(green(`[+] Welcome to ${target.os}`));
+          setState(prev => ({...prev, currentServer: target, currentPath: '/'}));
+        } else {
+          lines.push(slow(`[*] Connecting to ${target.ip}...`,'cyan'));
+          lines.push(red(`[!] Access denied — server not yet compromised`));
+          lines.push(yellow(`[*] Try: crack, exploit <port>, or bypass (if firewall)`));
+        }
+        addSuspicion(2);
+        break;
+      }
+
+      case 'disconnect': {
+        if (!srv) { lines.push(yellow('[*] Not connected to any server')); break; }
+        lines.push(yellow(`[*] Disconnected from ${srv.hostname}`));
+        setState(prev => ({...prev, currentServer: null, currentPath: '/', pivotServer: null}));
+        break;
+      }
+
+      case 'crack':
+      case 'bruteforce': {
+        if (!srv) { lines.push(red('[!] Not connected to any server. Use: ssh <ip>')); break; }
+        if (srv.cracked) { lines.push(yellow('[*] Server already compromised')); break; }
+        if (srv.firewall && !state.firewallBypassed.has(srv.ip)) {
+          lines.push(red('[!] Firewall is blocking brute force attempts'));
+          lines.push(yellow('[*] Use "bypass" first to disable the firewall'));
+          break;
+        }
+
+        if (triggerIDS(srv)) {
+          lines.push(red('[!!!] ALERT: IDS detected intrusion attempt!'));
+          lines.push(red('[!!!] Connection terminated by remote host'));
+          lines.push(yellow('[*] Try using "proxy start" before reconnecting'));
+          addSuspicion(25);
+          setState(prev => ({...prev, currentServer: null, currentPath: '/'}));
+          break;
+        }
+
+        lines.push(slow('[*] Starting brute force attack...','cyan'));
+        lines.push(slow(`[*] Target: ${srv.hostname} (${srv.ip})`));
+        lines.push(slow(`[*] Users: ${srv.users.join(', ')}`));
+        lines.push(white(''));
+
+        // Show fake password attempts
+        const numAttempts = Math.floor(Math.random()*8)+5;
+        const shuffled = [...FAKE_PASSWORDS_LIST].sort(()=>Math.random()-0.5);
+        for (let i = 0; i < numAttempts; i++) {
+          lines.push(slow(`[*] Trying: ${shuffled[i]}    [FAILED]`,'gray'));
+        }
+
+        // Difficulty check
+        const successChance = Math.max(0.3, 1 - (srv.difficulty * 0.15));
+        if (Math.random() < successChance) {
+          lines.push(slow(`[*] Trying: ${srv.password}    [SUCCESS!]`,'green'));
+          lines.push(green(`\n[+] Password cracked: ${srv.password}`));
+          lines.push(green(`[+] Access granted to ${srv.hostname}!`));
+          addSuspicion(10);
+          setState(prev => {
+            const servers = prev.servers.map(s => s.ip === srv.ip ? {...s, cracked: true} : s);
+            let newState = {...prev, servers, currentServer: {...srv, cracked: true}};
+            newState = checkMissions(newState);
+            return newState;
+          });
+        } else {
+          lines.push(slow(`[*] Trying: ${shuffled[numAttempts]}    [FAILED]`,'gray'));
+          lines.push(red('\n[!] Brute force failed — password not in dictionary'));
+          lines.push(yellow('[*] Try again or use "exploit <port>" for a different approach'));
+          addSuspicion(8);
+        }
+        break;
+      }
+
+      case 'exploit': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (srv.cracked) { lines.push(yellow('[*] Server already compromised')); break; }
+        if (!args[0]) { lines.push(red('Usage: exploit <port>')); break; }
+        const port = parseInt(args[0]);
+        if (!srv.ports.includes(port)) {
+          lines.push(red(`[!] Port ${port} is not open on ${srv.hostname}`));
+          break;
+        }
+        if (srv.firewall && !state.firewallBypassed.has(srv.ip)) {
+          lines.push(red('[!] Firewall is blocking exploit delivery'));
+          lines.push(yellow('[*] Use "bypass" first'));
+          break;
+        }
+
+        if (triggerIDS(srv)) {
+          lines.push(red('[!!!] ALERT: IDS detected exploit attempt!'));
+          lines.push(red('[!!!] Connection terminated'));
+          addSuspicion(30);
+          setState(prev => ({...prev, currentServer: null, currentPath: '/'}));
+          break;
+        }
+
+        const cve = CVE_LIST.find(c=>c.port===port) || CVE_LIST[Math.floor(Math.random()*CVE_LIST.length)];
+        lines.push(slow(`[*] Searching exploit for ${srv.services[port]||'service'} on port ${port}...`,'cyan'));
+        lines.push(slow(`[*] Found: ${cve.cve} — ${cve.name}`,'yellow'));
+        lines.push(slow(`[*] Description: ${cve.desc}`));
+        lines.push(slow('[*] Preparing payload...'));
+        lines.push(slow('[*] Sending exploit...'));
+        lines.push(slow('[*] Waiting for shell...'));
+
+        const expChance = Math.max(0.4, 1 - (srv.difficulty * 0.12));
+        if (Math.random() < expChance) {
+          lines.push(green('\n[+] Exploit successful!'));
+          lines.push(green(`[+] Got shell on ${srv.hostname} as root`));
+          addSuspicion(12);
+          setState(prev => {
+            const servers = prev.servers.map(s => s.ip === srv.ip ? {...s, cracked: true} : s);
+            let newState = {...prev, servers, currentServer: {...srv, cracked: true}};
+            newState = checkMissions(newState);
+            return newState;
+          });
+        } else {
+          lines.push(red('\n[!] Exploit failed — target may be patched'));
+          lines.push(yellow('[*] Try a different port or use "crack"'));
+          addSuspicion(10);
+        }
+        break;
+      }
+
+      case 'bypass': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.firewall) { lines.push(yellow('[*] No firewall on this server')); break; }
+        if (state.firewallBypassed.has(srv.ip)) { lines.push(yellow('[*] Firewall already bypassed')); break; }
+
+        lines.push(slow('[*] Analyzing firewall rules...','cyan'));
+        lines.push(slow('[*] Scanning for misconfigurations...'));
+        lines.push(slow('[*] Testing rule bypass techniques...'));
+
+        if (Math.random() < 0.7) {
+          lines.push(slow('[*] Found vulnerability in firewall configuration!','yellow'));
+          lines.push(green('[+] Firewall bypassed successfully!'));
+          lines.push(green('[+] All ports are now accessible'));
+          addSuspicion(8);
+          setState(prev => {
+            const bypassed = new Set(prev.firewallBypassed);
+            bypassed.add(srv.ip);
+            return {...prev, firewallBypassed: bypassed};
+          });
+        } else {
+          lines.push(red('[!] Bypass failed — try again'));
+          addSuspicion(5);
+        }
+        break;
+      }
+
+      case 'sqlmap': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Need shell access first. Crack the server!')); break; }
+        const hasDB = srv.ports.includes(3306) || srv.ports.includes(5432);
+        if (!hasDB) { lines.push(red('[!] No database service found on this server')); break; }
+
+        const dbType = srv.ports.includes(3306) ? 'MySQL' : 'PostgreSQL';
+        lines.push(slow(`[*] sqlmap v1.8 - automatic SQL injection tool`,'cyan'));
+        lines.push(slow(`[*] Target: ${srv.ip} (${dbType})`));
+        lines.push(slow(`[*] Testing connection...`));
+        lines.push(slow(`[*] ${dbType} version: ${dbType === 'MySQL' ? '8.0.35' : '15.4'}`));
+        lines.push(slow(`[*] Enumerating databases...`));
+        lines.push(green(`\n[+] Available databases:`));
+        lines.push(white(`  [*] production`));
+        lines.push(white(`  [*] information_schema`));
+        lines.push(white(`  [*] mysql`));
+        lines.push(slow(`\n[*] Dumping table 'users' from 'production'...`));
+        lines.push(green(`[+] Table: users (5 entries)`));
+        lines.push(gray('─'.repeat(60)));
+        lines.push(white(padR('id',5)+padR('username',15)+padR('email',25)+'role'));
+        lines.push(gray('─'.repeat(60)));
+        lines.push(white(padR('1',5)+padR('admin',15)+padR('admin@corp.local',25)+'superadmin'));
+        lines.push(white(padR('2',5)+padR('jsmith',15)+padR('jsmith@corp.local',25)+'admin'));
+        lines.push(white(padR('3',5)+padR('jdoe',15)+padR('jdoe@corp.local',25)+'user'));
+        lines.push(green(`\n[+] SQL injection successful!`));
+        addSuspicion(10);
+        break;
+      }
+
+      case 'ls': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied — server not compromised')); break; }
+        const targetPath = args[0] ? normalizePath(state.currentPath, args[0]) : state.currentPath;
+        const contents = resolvePath(srv.files, targetPath);
+        if (contents === null || typeof contents === 'string') {
+          lines.push(red(`ls: cannot access '${args[0]||targetPath}': No such directory`));
+          break;
+        }
+        const entries = Object.keys(contents);
+        if (!entries.length) { lines.push(gray('(empty directory)')); break; }
+        entries.forEach(e => {
+          const isDir = typeof contents[e] === 'object';
+          if (isDir) lines.push(cyan(`  📁 ${e}/`));
+          else lines.push(white(`  📄 ${e}`));
+        });
+        break;
+      }
+
+      case 'cd': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        if (!args[0]) { setState(prev=>({...prev,currentPath:'/'})); break; }
+        const newPath = normalizePath(state.currentPath, args[0]);
+        const dir = resolvePath(srv.files, newPath);
+        if (dir === null || typeof dir === 'string') {
+          lines.push(red(`cd: ${args[0]}: No such directory`));
+          break;
+        }
+        setState(prev => ({...prev, currentPath: newPath}));
+        break;
+      }
+
+      case 'cat': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        if (!args[0]) { lines.push(red('Usage: cat <file>')); break; }
+        const filePath = normalizePath(state.currentPath, args[0]);
+        const file = resolvePath(srv.files, filePath);
+        if (file === null) { lines.push(red(`cat: ${args[0]}: No such file`)); break; }
+        if (typeof file === 'object') { lines.push(red(`cat: ${args[0]}: Is a directory`)); break; }
+        file.split('\n').forEach(l => lines.push(white(l)));
+        break;
+      }
+
+      case 'pwd': {
+        if (!srv) { lines.push(white('/home/hacker')); break; }
+        lines.push(white(state.currentPath || '/'));
+        break;
+      }
+
+      case 'find': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        if (!args[0]) { lines.push(red('Usage: find <pattern>')); break; }
+        const pattern = args[0].toLowerCase();
+        const results = [];
+        const searchTree = (obj, path) => {
+          Object.keys(obj).forEach(k => {
+            const fullPath = path + '/' + k;
+            if (k.toLowerCase().includes(pattern)) results.push(fullPath);
+            if (typeof obj[k] === 'object') searchTree(obj[k], fullPath);
+          });
+        };
+        searchTree(srv.files, '');
+        if (!results.length) { lines.push(yellow(`No files matching "${args[0]}"`)); }
+        else results.forEach(r => lines.push(green(r)));
+        break;
+      }
+
+      case 'download': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        if (!args[0]) { lines.push(red('Usage: download <file>')); break; }
+        const dlPath = normalizePath(state.currentPath, args[0]);
+        const dlFile = resolvePath(srv.files, dlPath);
+        if (dlFile === null) { lines.push(red(`[!] File not found: ${args[0]}`)); break; }
+        if (typeof dlFile === 'object') { lines.push(red('[!] Cannot download directory')); break; }
+
+        const fileName = args[0].split('/').pop();
+        const fakeSize = Math.floor(Math.random()*900)+100;
+        lines.push(slow(`[*] Downloading ${fileName} (${fakeSize} KB)...`,'cyan'));
+        lines.push(slow('[▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%','green'));
+        lines.push(green(`[+] Downloaded: ${fileName}`));
+        addSuspicion(5);
+        setState(prev => {
+          const df = [...prev.downloadedFiles, fileName];
+          let newState = {...prev, downloadedFiles: df};
+          newState = checkMissions(newState);
+          return newState;
+        });
+        break;
+      }
+
+      case 'rm': {
+        if (!srv || !srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        if (!args[0]) { lines.push(red('Usage: rm <file>')); break; }
+        lines.push(yellow(`[*] Removed: ${args[0]}`));
+        break;
+      }
+
+      case 'upload': {
+        if (!srv || !srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        const tool = args[0] || 'payload.bin';
+        lines.push(slow(`[*] Uploading ${tool}...`,'cyan'));
+        lines.push(slow('[▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓] 100%','green'));
+        lines.push(green(`[+] Uploaded ${tool} to ${srv.hostname}`));
+        break;
+      }
+
+      case 'kill-logs': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Access denied')); break; }
+        lines.push(slow('[*] Clearing authentication logs...','cyan'));
+        lines.push(slow('[*] Clearing system logs...'));
+        lines.push(slow('[*] Clearing application logs...'));
+        lines.push(slow('[*] Modifying log timestamps...'));
+        lines.push(green('[+] All logs cleared on ' + srv.hostname));
+        setState(prev => {
+          const servers = prev.servers.map(s => s.ip === srv.ip ? {...s, logsCleared: true} : s);
+          const newCurrent = {...srv, logsCleared: true};
+          let newState = {...prev, servers, currentServer: newCurrent};
+          newState = checkMissions(newState);
+          return newState;
+        });
+        break;
+      }
+
+      case 'backdoor': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Need shell access first')); break; }
+        if (srv.backdoor) { lines.push(yellow('[*] Backdoor already installed')); break; }
+        lines.push(slow('[*] Installing persistent backdoor...','cyan'));
+        lines.push(slow('[*] Creating hidden service...'));
+        lines.push(slow('[*] Adding cron job for persistence...'));
+        lines.push(slow('[*] Configuring reverse shell...'));
+        lines.push(green(`[+] Backdoor installed on ${srv.hostname}`));
+        lines.push(green('[+] Server will remain accessible after reboot'));
+        setState(prev => {
+          const servers = prev.servers.map(s => s.ip === srv.ip ? {...s, backdoor: true} : s);
+          return {...prev, servers, currentServer: {...srv, backdoor: true}};
+        });
+        break;
+      }
+
+      case 'pivot': {
+        if (!srv) { lines.push(red('[!] Not connected to any server')); break; }
+        if (!srv.cracked) { lines.push(red('[!] Need shell access on current server')); break; }
+        if (!args[0]) { lines.push(red('Usage: pivot <ip>')); break; }
+
+        const pivotTarget = findServer(args[0]);
+        if (!pivotTarget) { lines.push(red(`[!] Unknown target: ${args[0]}`)); break; }
+
+        if (!srv.connections.includes(pivotTarget.ip)) {
+          lines.push(red(`[!] ${pivotTarget.ip} is not reachable from ${srv.hostname}`));
+          lines.push(yellow(`[*] Reachable from here: ${srv.connections.join(', ')}`));
+          break;
+        }
+
+        lines.push(slow(`[*] Pivoting through ${srv.hostname} to ${pivotTarget.ip}...`,'cyan'));
+        lines.push(slow(`[*] Setting up tunnel ${srv.ip} → ${pivotTarget.ip}...`));
+        lines.push(green(`[+] Tunnel established`));
+        lines.push(green(`[+] Connected to ${pivotTarget.hostname} (${pivotTarget.ip}) via ${srv.hostname}`));
+        addSuspicion(5);
+
+        setState(prev => ({
+          ...prev,
+          pivotServer: srv,
+          currentServer: pivotTarget,
+          currentPath: '/',
+        }));
+
+        if (pivotTarget.cracked || pivotTarget.backdoor) {
+          lines.push(green(`[+] Shell access — server previously compromised`));
+        } else {
+          lines.push(yellow(`[*] Server not yet compromised. Use crack/exploit/bypass.`));
+        }
+        break;
+      }
+
+      case 'proxy': {
+        if (args[0] === 'start') {
+          lines.push(slow('[*] Starting proxy chain...','cyan'));
+          const chain = [randomIP(), randomIP(), randomIP(), randomIP()];
+          chain.forEach((ip,i) => {
+            lines.push(slow(`  [${i+1}] → ${ip} (${['TOR','SOCKS5','HTTP','VPN'][i]})`,'gray'));
+          });
+          lines.push(green('\n[+] Proxy chain active'));
+          lines.push(green('[+] Suspicion gain reduced by 70%'));
+          lines.push(yellow('[*] Warning: connection speed reduced'));
+          setState(prev => ({...prev, proxyActive: true}));
+        } else if (args[0] === 'stop') {
+          lines.push(yellow('[*] Proxy chain deactivated'));
+          setState(prev => ({...prev, proxyActive: false}));
+        } else {
+          lines.push(white('Usage: proxy start|stop'));
+        }
+        break;
+      }
+
+      case 'ifconfig': {
+        const iface = srv ? srv.ip : '127.0.0.1';
+        lines.push(white('eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500'));
+        lines.push(white(`        inet ${iface}  netmask 255.255.255.0`));
+        lines.push(white('        inet6 fe80::1  prefixlen 64'));
+        lines.push(white('        ether 02:42:ac:11:00:02  txqueuelen 0'));
+        lines.push(white('        RX packets 154832  bytes 89745123 (89.7 MB)'));
+        lines.push(white('        TX packets 112456  bytes 67321890 (67.3 MB)'));
+        lines.push(white('\nlo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536'));
+        lines.push(white('        inet 127.0.0.1  netmask 255.0.0.0'));
+        break;
+      }
+
+      case 'netstat': {
+        lines.push(white('Active Internet connections:'));
+        lines.push(gray(padR('Proto',8)+padR('Local Address',25)+padR('Foreign Address',25)+'State'));
+        if (srv) {
+          lines.push(white(padR('tcp',8)+padR(`${srv.ip}:22`,25)+padR('192.168.1.100:52341',25)+'ESTABLISHED'));
+          srv.connections.forEach(c => {
+            const port = [22,80,443,3306][Math.floor(Math.random()*4)];
+            lines.push(white(padR('tcp',8)+padR(`${srv.ip}:${port}`,25)+padR(`${c}:${Math.floor(Math.random()*60000)+1024}`,25)+'ESTABLISHED'));
+          });
+        } else {
+          lines.push(white(padR('tcp',8)+padR('127.0.0.1:8080',25)+padR('0.0.0.0:*',25)+'LISTEN'));
+        }
+        break;
+      }
+
+      case 'mission': {
+        const m = MISSIONS[state.currentMission];
+        if (!m) {
+          lines.push(green('[+] Все миссии выполнены! Ты — мастер.'));
+          break;
+        }
+        lines.push(cyan(`\n╔═══════ МИССИЯ ${m.id} ═══════╗`));
+        lines.push(yellow(`  ${m.title}`));
+        lines.push(white(`  ${m.desc}`));
+        lines.push(cyan(`╚════════════════════════╝\n`));
+        break;
+      }
+
+      case 'missions': {
+        lines.push(cyan('\n═══════ МИССИИ ═══════'));
+        MISSIONS.forEach((m,i) => {
+          const done = i < state.currentMission;
+          const current = i === state.currentMission;
+          const icon = done ? '✅' : current ? '▶️' : '⬜';
+          const color = done ? 'green' : current ? 'yellow' : 'gray';
+          lines.push({text: `${icon} ${m.id}. ${m.title} — ${m.desc}`, color});
+        });
+        lines.push(cyan('═'.repeat(30)+'\n'));
+        break;
+      }
+
+      case 'status': {
+        lines.push(cyan('\n═══════ SERVER STATUS ═══════'));
+        lines.push(gray(padR('IP',18)+padR('HOSTNAME',18)+padR('DIFF',8)+padR('FW',6)+padR('IDS',6)+'STATUS'));
+        lines.push(gray('─'.repeat(75)));
+        state.servers.forEach(s => {
+          const known = state.discoveredServers.has(s.ip);
+          if (!known) return;
+          const statusText = s.cracked ? '🔓 CRACKED' : '🔒 SECURED';
+          const statusColor = s.cracked ? 'green' : 'red';
+          lines.push({text: padR(s.ip,18)+padR(s.hostname,18)+padR('★'.repeat(s.difficulty),8)+padR(s.firewall?'YES':'NO',6)+padR(s.ids?'YES':'NO',6)+statusText, color: statusColor});
+        });
+        const total = state.servers.length;
+        const cracked = state.servers.filter(s=>s.cracked).length;
+        lines.push(gray('─'.repeat(75)));
+        lines.push(cyan(`Discovered: ${state.discoveredServers.size}/${total}  |  Cracked: ${cracked}/${total}  |  Mission: ${state.currentMission+1}/${MISSIONS.length}`));
+        lines.push(white(''));
+        break;
+      }
+
+      case 'map': {
+        lines.push(cyan('\n═══════════ NETWORK MAP ═══════════'));
+        lines.push(white(''));
+        lines.push(gray('    ┌──────── DMZ (192.168.1.0/24) ────────┐'));
+        lines.push(white(`    │  ${fmtNode('192.168.1.10','corp-fileserv',state)}      │`));
+        lines.push(white(`    │  ${fmtNode('192.168.1.20','web-frontend',state)}       │`));
+        lines.push(white(`    │  ${fmtNode('192.168.1.30','dev-ci-01',state)}          │`));
+        lines.push(gray('    └───────────────┬──────────────────────┘'));
+        lines.push(gray('                    │'));
+        lines.push(gray('    ┌──── INTERNAL (10.0.1.0/24) ────┐'));
+        lines.push(white(`    │  ${fmtNode('10.0.1.15','mail-prod',state)}          │`));
+        lines.push(white(`    │  ${fmtNode('10.0.1.25','hr-internal',state)}        │`));
+        lines.push(gray('    └───────────────┬──────────────────┘'));
+        lines.push(gray('                    │'));
+        lines.push(gray('    ┌──── DATA (10.0.2.0/24) ────────┐'));
+        lines.push(white(`    │  ${fmtNode('10.0.2.50','db-master',state)}          │`));
+        lines.push(white(`    │  ${fmtNode('10.0.2.100','backup-nas',state)}        │`));
+        lines.push(gray('    └───────────────┬──────────────────┘'));
+        lines.push(gray('                    │'));
+        lines.push(gray('    ┌──── MGMT (172.16.0.0/24) ──────┐'));
+        lines.push(white(`    │  ${fmtNode('172.16.0.1','vpn-gateway',state)}       │`));
+        lines.push(white(`    │  ${fmtNode('172.16.0.10','monitoring-01',state)}    │`));
+        lines.push(gray('    └───────────────┬──────────────────┘'));
+        lines.push(gray('                    │'));
+        lines.push(gray('    ┌──── DC (10.0.0.0/24) ──────────┐'));
+        lines.push(white(`    │  ${fmtNode('10.0.0.1','dc-primary',state)}   [BOSS] │`));
+        lines.push(gray('    └──────────────────────────────────┘'));
+        lines.push(white(''));
+        lines.push(gray('  🔓 = cracked  🔒 = secured  ❓ = unknown'));
+        lines.push(white(''));
+        break;
+      }
+
+      case 'whoami': {
+        lines.push(white(srv?.cracked ? 'root' : 'hacker'));
+        break;
+      }
+
+      case 'hostname': {
+        lines.push(white(srv ? srv.hostname : 'localhost'));
+        break;
+      }
+
+      default: {
+        lines.push(red(`bash: ${command}: command not found`));
+        lines.push(gray('Type "help" for available commands'));
+      }
+    }
+
+    // Update history and output
+    addLines(lines, () => {
+      // Check for all complete
+      setState(prev => {
+        if (prev.allComplete && !prev.missionPopup) {
+          return {...prev, missionPopup: 'allComplete'};
+        }
+        return prev;
+      });
+    });
+    setState(prev => ({
+      ...prev,
+      inputValue: '',
+      inputHistory: [...prev.inputHistory, trimmed],
+      historyIndex: -1,
+    }));
+  }, [state, addLines, checkMissions]);
+
+  const handleKeyDown = (e) => {
+    if (state.isTyping) return;
+    if (e.key === 'Enter') {
+      processCommand(state.inputValue);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setState(prev => {
+        const newIdx = Math.min(prev.historyIndex + 1, prev.inputHistory.length - 1);
+        const val = prev.inputHistory[prev.inputHistory.length - 1 - newIdx] || '';
+        return {...prev, historyIndex: newIdx, inputValue: val};
+      });
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setState(prev => {
+        const newIdx = Math.max(prev.historyIndex - 1, -1);
+        const val = newIdx >= 0 ? (prev.inputHistory[prev.inputHistory.length - 1 - newIdx] || '') : '';
+        return {...prev, historyIndex: newIdx, inputValue: val};
+      });
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      // Simple tab completion for commands
+      const cmds = ['nmap','ping','whois','traceroute','ssh','connect','disconnect','crack','bruteforce','exploit','bypass','sqlmap','ls','cd','cat','pwd','find','download','upload','rm','kill-logs','backdoor','pivot','proxy','ifconfig','netstat','help','clear','mission','missions','status','whoami','hostname','map'];
+      const match = cmds.filter(c => c.startsWith(state.inputValue.toLowerCase()));
+      if (match.length === 1) {
+        setState(prev => ({...prev, inputValue: match[0] + ' '}));
+      }
+    }
+  };
+
+  const prompt = state.currentServer
+    ? `┌──(hacker㉿${state.currentServer.hostname})─$ `
+    : `┌──(hacker㉿localhost)─$ `;
+
+  const currentMission = MISSIONS[state.currentMission];
+  const crackedCount = state.servers.filter(s => s.cracked).length;
+  const suspColor = state.suspicion < 30 ? 'bg-green-600' : state.suspicion < 60 ? 'bg-yellow-500' : 'bg-red-600';
+
+  return (
+    <div className="crt w-screen h-screen flex flex-col" style={{fontFamily:"'JetBrains Mono',monospace"}}
+      onClick={() => inputRef.current?.focus()}>
+
+      {/* Top bar */}
+      <div className="flex items-center gap-4 px-4 py-2 bg-gray-900 border-b border-gray-700 text-xs shrink-0">
+        <span className="text-green-400">
+          {state.currentServer ? `🖥 ${state.currentServer.hostname} (${state.currentServer.ip})` : '🖥 localhost'}
+        </span>
+        <span className="text-gray-500">│</span>
+        <span className="text-yellow-400">
+          ⚡ Mission {Math.min(state.currentMission + 1, MISSIONS.length)}/{MISSIONS.length}
+          {currentMission ? `: ${currentMission.title}` : ': ALL COMPLETE'}
+        </span>
+        <span className="text-gray-500">│</span>
+        <span className="text-cyan-400">🔓 {crackedCount}/{state.servers.length}</span>
+        <span className="text-gray-500">│</span>
+        <div className="flex items-center gap-2">
+          <span className={`${state.suspicion > 60 ? 'text-red-400' : 'text-gray-400'}`}>
+            ⚠ Suspicion:
+          </span>
+          <div className="w-24 h-2 bg-gray-700 rounded overflow-hidden">
+            <div className={`h-full ${suspColor} transition-all duration-500`}
+              style={{width:`${state.suspicion}%`}} />
+          </div>
+          <span className={`${state.suspicion > 60 ? 'text-red-400' : 'text-gray-400'}`}>{state.suspicion}%</span>
+        </div>
+        {state.proxyActive && (
+          <>
+            <span className="text-gray-500">│</span>
+            <span className="text-purple-400">🔒 PROXY</span>
+          </>
+        )}
+      </div>
+
+      {/* Terminal */}
+      <div ref={terminalRef}
+        className="flex-1 overflow-y-auto p-4 bg-black"
+        style={{scrollBehavior:'smooth'}}>
+        {state.lines.map((line, i) => (
+          <div key={i} className="leading-relaxed" style={{
+            color: line.color === 'green' ? '#00ff00' :
+                   line.color === 'red' ? '#ff4444' :
+                   line.color === 'yellow' ? '#ffdd44' :
+                   line.color === 'cyan' ? '#44ddff' :
+                   line.color === 'gray' ? '#666666' :
+                   line.color === 'purple' ? '#bb66ff' :
+                   '#cccccc',
+            fontSize: '13px',
+            minHeight: '1.2em',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+          }}>
+            {line.text || '\u00A0'}
+          </div>
+        ))}
+
+        {/* Input line */}
+        {!state.isTyping && (
+          <div className="flex items-center mt-1" style={{fontSize:'13px'}}>
+            <span style={{color:'#00ff00', whiteSpace:'pre'}}>{prompt}</span>
+            <input
+              ref={inputRef}
+              type="text"
+              value={state.inputValue}
+              onChange={e => setState(prev => ({...prev, inputValue: e.target.value}))}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-transparent border-none text-green-400 outline-none"
+              style={{fontFamily:"'JetBrains Mono',monospace", fontSize:'13px', color:'#00ff00', caretColor:'#00ff00'}}
+              autoFocus
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <span className="cursor-blink" style={{color:'#00ff00'}}>▊</span>
+          </div>
+        )}
+        {state.isTyping && (
+          <div className="mt-1" style={{fontSize:'13px',color:'#666'}}>
+            <span className="cursor-blink">▊</span>
+          </div>
+        )}
+      </div>
+
+      {/* Mission complete popup */}
+      {state.missionPopup && state.missionPopup !== 'allComplete' && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-70"
+          onClick={() => setState(prev=>({...prev, missionPopup: null}))}>
+          <div className="mission-popup border-2 border-green-500 bg-gray-900 p-8 rounded-lg max-w-md text-center">
+            <div className="text-green-400 text-2xl mb-4">✅ МИССИЯ ВЫПОЛНЕНА!</div>
+            <div className="text-yellow-300 text-lg mb-2">{state.missionPopup.title}</div>
+            <div className="text-gray-300 mb-4">{state.missionPopup.desc}</div>
+            <div className="text-cyan-400">Награда: {state.missionPopup.reward}</div>
+            <div className="text-gray-500 text-sm mt-4">(нажми чтобы закрыть)</div>
+          </div>
+        </div>
+      )}
+
+      {/* All complete */}
+      {state.missionPopup === 'allComplete' && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-80"
+          onClick={() => setState(prev=>({...prev, missionPopup: null}))}>
+          <div className="mission-popup text-center" style={{fontFamily:"'JetBrains Mono',monospace"}}>
+            <pre className="text-green-400 text-xs mb-4">{`
+ ██████╗  █████╗ ███╗   ███╗███████╗
+██╔════╝ ██╔══██╗████╗ ████║██╔════╝
+██║  ███╗███████║██╔████╔██║█████╗
+██║   ██║██╔══██║██║╚██╔╝██║██╔══╝
+╚██████╔╝██║  ██║██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝╚══════╝
+
+ ██████╗ ██╗   ██╗███████╗██████╗
+██╔═══██╗██║   ██║██╔════╝██╔══██╗
+██║   ██║██║   ██║█████╗  ██████╔╝
+██║   ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗
+╚██████╔╝ ╚████╔╝ ███████╗██║  ██║
+ ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝
+            `}</pre>
+            <div className="text-yellow-300 text-xl mb-2">ВСЕ МИССИИ ВЫПОЛНЕНЫ!</div>
+            <div className="text-green-400 text-lg mb-2">Полный контроль над сетью получен</div>
+            <div className="text-cyan-400 mb-2">Серверов взломано: {crackedCount}/{state.servers.length}</div>
+            <div className="text-gray-400 text-sm">Ты — настоящий хакер (в игре, конечно 😄)</div>
+            <div className="text-gray-600 text-xs mt-4">(нажми чтобы закрыть)</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ==================== UTILITY ====================
+
+function padR(str, len) {
+  if (str.length >= len) return str.substring(0, len);
+  return str + ' '.repeat(len - str.length);
+}
+
+function fmtNode(ip, name, state) {
+  const srv = state.servers.find(s => s.ip === ip);
+  const known = state.discoveredServers.has(ip);
+  if (!known) return `❓ ${padR('???', 14)} ${padR('???', 14)}`;
+  const icon = srv?.cracked ? '🔓' : '🔒';
+  return `${icon} ${padR(ip, 14)} ${padR(name, 14)}`;
+}
+
+// ==================== RENDER ====================
+
+ReactDOM.createRoot(document.getElementById('root')).render(<HackerSimulator />);
+
+</script>
+</body>
+</html>
