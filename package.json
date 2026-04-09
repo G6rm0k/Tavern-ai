@@ -1,7 +1,7 @@
 {
-  "name": "tavern-app",
-  "version": "1.0.0",
-  "description": "Local AI Chat Frontend - Better than SillyTavern",
+  "name": "wesaid-app",
+  "version": "3.0.0",
+  "description": "Local Chat Frontend",
   "main": "server/index.js",
   "scripts": {
     "start": "node server/index.js",

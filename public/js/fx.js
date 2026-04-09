@@ -23,12 +23,12 @@ const FX = {
     // Try to read the custom --accent color from inline styles
     const hex = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
     if (hex && hex.startsWith('#')) {
-      const r = parseInt(hex.slice(1,3), 16) || 140;
-      const g = parseInt(hex.slice(3,5), 16) || 90;
-      const b = parseInt(hex.slice(5,7), 16) || 255;
+      const r = parseInt(hex.slice(1,3), 16) || 249;
+      const g = parseInt(hex.slice(3,5), 16) || 115;
+      const b = parseInt(hex.slice(5,7), 16) || 22;
       return [r, g, b];
     }
-    return [140, 90, 255]; // fallback purple
+    return [249, 115, 22]; // fallback orange
   },
 
   _make() {

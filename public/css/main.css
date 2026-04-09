@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TAVERN v3  ·  Liquid Glass  ·  iOS-native feel
+   wesaid v3  ·  Liquid Glass  ·  iOS-native feel
    No borders, no zoom bugs, full bleed mobile
 ═══════════════════════════════════════════════════════════ */
 
@@ -23,8 +23,8 @@
   --surf2: #1a1a36;
   --surf3: #202040;
 
-  /* accent – purple default */
-  --ah: 265; --as: 80%; --al: 62%;
+  /* accent – orange default */
+  --ah: 28; --as: 90%; --al: 58%;
   --accent:        hsl(var(--ah), var(--as), var(--al));
   --accent-dim:    hsl(var(--ah), var(--as), 42%);
   --accent-bright: hsl(var(--ah), var(--as), 78%);
@@ -32,10 +32,10 @@
   --accent-ultra:  hsla(var(--ah), var(--as), var(--al), .10);
 
   /* text */
-  --t1: #f0eaff;
-  --t2: #b0a8d0;
-  --t3: #635e80;
-  --t4: #2e2a44;
+  --t1: #fff5eb;
+  --t2: #c8b8a4;
+  --t3: #7a6e5e;
+  --t4: #3a3228;
 
   /* status */
   --red:   #f87171;
@@ -80,13 +80,13 @@
 
 /* ── LIGHT MODE ─────────────────────────────────────────── */
 [data-theme="light"] {
-  --bg:  #f4f2fc; --bg2: #ece9f8; --bg3: #e4e0f5;
-  --glass-bg:  rgba(245,243,255,.60);
-  --glass-bg2: rgba(230,226,250,.75);
-  --glass-border:  rgba(100,80,200,.08);
-  --glass-border2: rgba(100,80,200,.16);
-  --surf:  #fff; --surf2: #f5f2fe; --surf3: #ece8fa;
-  --t1: #180f38; --t2: #4a3f72; --t3: #8878b0; --t4: #c8c0e0;
+  --bg:  #fcf5f0; --bg2: #f8ede4; --bg3: #f2e4d8;
+  --glass-bg:  rgba(255,248,240,.60);
+  --glass-bg2: rgba(248,237,228,.75);
+  --glass-border:  rgba(200,120,50,.08);
+  --glass-border2: rgba(200,120,50,.16);
+  --surf:  #fff; --surf2: #fef6f0; --surf3: #faeee4;
+  --t1: #2d1a08; --t2: #6b4e36; --t3: #a08068; --t4: #d4c0ae;
 }
 
 /* ── RESET ──────────────────────────────────────────────── */
@@ -1664,7 +1664,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 /* Actions row */
 .disc-card-row { display:flex; gap:6px; align-items:center; margin-top:auto; padding-top:2px; }
 .disc-fav-btn {
-  width:34px; height:34px; flex-shrink:0; border-radius:50%;
+  width:44px; height:44px; flex-shrink:0; border-radius:50%;
   background:var(--glass-bg2); border:1px solid var(--glass-border2);
   font-size:14px; cursor:pointer; touch-action:manipulation;
   display:flex; align-items:center; justify-content:center;
@@ -1673,7 +1673,7 @@ input[type="range"]:active::-webkit-slider-thumb {
 .disc-fav-btn:active { transform:scale(.8); }
 .disc-fav-btn.on { background:var(--accent-ultra); border-color:var(--accent-glow); }
 .disc-add-btn {
-  flex:1; height:34px; border-radius:99px;
+  flex:1; height:44px; border-radius:99px;
   background:var(--accent); color:#fff;
   font-size:12px; font-weight:600; font-family:var(--f-body);
   border:none; cursor:pointer; touch-action:manipulation;
@@ -2222,3 +2222,14 @@ input[type="range"]:active::-webkit-slider-thumb {
   cursor: pointer; outline: none;
 }
 .form-select:focus { border-color: var(--accent); }
+
+/* ── REDUCED MOTION / PERFORMANCE ──────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .glass, .sidebar, .modal, .sheet, .chat-hd, .mob-nav,
+  [style*="backdrop-filter"], [style*="-webkit-backdrop-filter"] {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  #fx-canvas { display: none !important; }
+}

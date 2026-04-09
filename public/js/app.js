@@ -8,9 +8,13 @@ const App = {
   get isMobile() { return window.innerWidth <= 768; },
 
   async init() {
+    // Migrate old localStorage keys from tavern_ to wesaid_
+    for (const [old, nw] of [['tavern_token','wesaid_token'],['tavern_settings','wesaid_settings'],['tavern_favs','wesaid_favs'],['tavern_lang','wesaid_lang']]) {
+      if (!localStorage.getItem(nw) && localStorage.getItem(old)) localStorage.setItem(nw, localStorage.getItem(old));
+    }
     // Apply theme immediately from localStorage to avoid flash
     try {
-      const raw = localStorage.getItem('tavern_settings');
+      const raw = localStorage.getItem('wesaid_settings');
       if (raw) {
         const s = JSON.parse(raw);
         if (s.app?.theme)   document.documentElement.setAttribute('data-theme',  s.app.theme);
@@ -103,7 +107,7 @@ const App = {
 
       <div class="sidebar" id="sidebar">
         <div class="sidebar-hd">
-          <div class="sidebar-logo">Tavern</div>
+          <div class="sidebar-logo">wesaid</div>
           <button class="btn-icon" onclick="App.navigate('create')" style="color:var(--accent)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
@@ -169,7 +173,7 @@ const App = {
       const prev = (last?.content || '').slice(0, 34) || '…';
       const av = c.characterAvatar
         ? `<img src="${c.characterAvatar}" />`
-        : `<span>${c.characterAvatarEmoji || '🤖'}</span>`;
+        : `<span>${c.characterAvatarEmoji || '✦'}</span>`;
       return `<button class="chat-row" data-cid="${c.id}" onclick="Chat.load('${c.id}')">
         <div class="chat-av">${av}</div>
         <div class="chat-info">
@@ -189,6 +193,8 @@ const App = {
   },
 
   navigate(v, opts = {}) {
+    // Abort any in-flight stream when leaving chat
+    if (this.view === 'chat' && v !== 'chat') API.abortStream();
     this.view = v;
     document.querySelectorAll('.view').forEach(el => el.classList.remove('on'));
     const prevActive = document.querySelector('.mob-nav-item.on');
@@ -209,7 +215,7 @@ const App = {
       const recentHtml = recentChats.length ? recentChats.map(c => {
         const av = c.characterAvatar
           ? `<img src="${c.characterAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
-          : `<span style="font-size:22px">${c.characterAvatarEmoji||'🤖'}</span>`;
+          : `<span style="font-size:22px">${c.characterAvatarEmoji||'✦'}</span>`;
         const last = c.messages[c.messages.length-1];
         const prev = (last?.content||'').slice(0,30)||'…';
         return `<button class="home-recent-item" onclick="Chat.load('${c.id}')">
@@ -389,7 +395,7 @@ const App = {
     } catch (e) { toast(e.message, 'error'); }
   },
 
-  logout() { API.setToken(null); location.reload(); },
+  logout() { API.logout().catch(()=>{}); API.setToken(null); location.reload(); },
 
   async _renderAccountView(el) {
     const u = this.user;
@@ -446,7 +452,19 @@ const App = {
   },
 
   _bindGlobalSwipe() {
-    // Swipe sidebar disabled for mobile web app
+    if (!this.isMobile) return;
+    let startX = 0, startY = 0, tracking = false;
+    document.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      if (t.clientX < 24 && !this._sbOpen) { startX = t.clientX; startY = t.clientY; tracking = true; }
+    }, { passive: true });
+    document.addEventListener('touchmove', e => {
+      if (!tracking) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (dx > 60 && dy < 50) { tracking = false; this.openSidebar(); }
+    }, { passive: true });
+    document.addEventListener('touchend', () => { tracking = false; }, { passive: true });
   }
 };
 

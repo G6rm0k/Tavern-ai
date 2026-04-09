@@ -18,8 +18,8 @@ const LiquidDrop = {
   // Loop guard — incrementing token; stale loops self-terminate
   _loopId: 0,
 
-  // Color — initialised to purple so it's never null
-  color: [139, 92, 246],
+  // Color — initialised to orange so it's never null
+  color: [249, 115, 22],
 
   // ── init ──────────────────────────────────────────────────
   init() {
@@ -70,7 +70,7 @@ const LiquidDrop = {
       red:    [239, 68, 68],
       cyan:   [6, 182, 212],
     };
-    this.color = map[document.documentElement.getAttribute('data-accent') || 'purple'] || [139, 92, 246];
+    this.color = map[document.documentElement.getAttribute('data-accent') || 'orange'] || [249, 115, 22];
   },
 
   // ── helpers ───────────────────────────────────────────────

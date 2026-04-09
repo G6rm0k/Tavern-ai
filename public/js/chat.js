@@ -20,7 +20,7 @@ const Chat = {
       characterId: charId,
       characterName: char.name,
       characterAvatar: char.avatar || null,
-      characterAvatarEmoji: char.avatar_emoji || '🤖',
+      characterAvatarEmoji: char.avatar_emoji || '✦',
       messages: msgs
     });
     App.chats.unshift(chat);
@@ -43,7 +43,7 @@ const Chat = {
     const prov = Settings.getActive();
     const av = c.characterAvatar
       ? `<img src="${c.characterAvatar}" />`
-      : `<span>${c.characterAvatarEmoji||'🤖'}</span>`;
+      : `<span>${c.characterAvatarEmoji||'✦'}</span>`;
 
     document.getElementById('view-chat').innerHTML = `
       ${char?.avatar ? `<div class="chat-bg" style="background-image:url('${char.avatar}')"></div>` : ''}
@@ -69,7 +69,7 @@ const Chat = {
         <div class="chat-msgs" id="chat-msgs">
           ${c.messages.length
             ? c.messages.map(m => this._msgHtml(m)).join('')
-            : `<div class="empty"><div class="empty-ico">💬</div><h3>${t('chat.empty')}</h3><p>${t('chat.empty.sub')}</p></div>`}
+            : `<div class="empty"><div class="empty-ico">◌</div><h3>${t('chat.empty')}</h3><p>${t('chat.empty.sub')}</p></div>`}
         </div>
 
         <div class="chat-inp-area">
@@ -98,7 +98,7 @@ const Chat = {
     const time = msg.ts ? new Date(msg.ts).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
     const av = isUser
       ? `<div class="msg-av">${(App.user?.displayName||'U')[0].toUpperCase()}</div>`
-      : `<div class="msg-av">${this.current.characterAvatar ? `<img src="${this.current.characterAvatar}" />` : this.current.characterAvatarEmoji||'🤖'}</div>`;
+      : `<div class="msg-av">${this.current.characterAvatar ? `<img src="${this.current.characterAvatar}" />` : this.current.characterAvatarEmoji||'✦'}</div>`;
 
     return `<div class="msg ${isUser?'user':'bot'}" data-id="${msg.id}">
       ${av}
@@ -222,7 +222,7 @@ const Chat = {
     const typing = document.createElement('div');
     typing.id = 'typing-el';
     typing.className = 'msg bot typing-msg';
-    typing.innerHTML = `<div class="msg-av">${this.current.characterAvatarEmoji||'🤖'}</div>
+    typing.innerHTML = `<div class="msg-av">${this.current.characterAvatarEmoji||'✦'}</div>
       <div class="msg-body"><div class="typing-bub"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div></div>`;
     container?.appendChild(typing);
     Anim.msgIn(typing);
@@ -300,11 +300,15 @@ const Chat = {
     if (el) el.scrollTop = el.scrollHeight;
   },
 
-  copyMsg(id) {
+  async copyMsg(id) {
     const m = this.current.messages.find(x=>x.id===id);
     if (!m) return;
-    navigator.clipboard?.writeText(m.content);
-    toast(t('toast.copied'), 'success');
+    try {
+      await navigator.clipboard.writeText(m.content);
+      toast(t('toast.copied'), 'success');
+    } catch {
+      toast('Copy failed', 'error');
+    }
   },
 
   editMsg(id) {
@@ -313,14 +317,19 @@ const Chat = {
     const bubble = document.querySelector(`[data-id="${id}"] .msg-bubble`);
     if (!bubble) return;
     const orig = m.content;
-    bubble.innerHTML = `
-      <textarea style="width:100%;background:transparent;border:none;color:inherit;font:inherit;resize:vertical;min-height:60px;-webkit-user-select:text;user-select:text">${orig}</textarea>
-      <div style="display:flex;gap:6px;margin-top:8px">
-        <button class="btn btn-primary" style="padding:7px 16px;font-size:13px" onclick="Chat._saveEdit('${id}')">Save</button>
-        <button class="btn btn-ghost"   style="padding:7px 14px;font-size:13px" onclick="Chat._cancelEdit('${id}')">Cancel</button>
-      </div>`;
+    bubble.textContent = '';
+    const ta = document.createElement('textarea');
+    ta.style.cssText = 'width:100%;background:transparent;border:none;color:inherit;font:inherit;resize:vertical;min-height:60px;-webkit-user-select:text;user-select:text';
+    ta.textContent = orig;
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;gap:6px;margin-top:8px';
+    btns.innerHTML = `
+      <button class="btn btn-primary" style="padding:7px 16px;font-size:13px" onclick="Chat._saveEdit('${id}')">Save</button>
+      <button class="btn btn-ghost"   style="padding:7px 14px;font-size:13px" onclick="Chat._cancelEdit('${id}')">Cancel</button>`;
+    bubble.appendChild(ta);
+    bubble.appendChild(btns);
     bubble._orig = orig;
-    bubble.querySelector('textarea').focus();
+    ta.focus();
   },
 
   async _saveEdit(id) {

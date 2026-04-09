@@ -266,6 +266,12 @@ app.post('/api/auth/login', async (req, res) => {
   res.json({ user: safeUser, token });
 });
 
+app.post('/api/auth/logout', (req, res) => {
+  const userId = verifyToken(req);
+  if (userId) keyStore.delete(userId);
+  res.json({ ok: true });
+});
+
 app.get('/api/auth/me', (req, res) => {
   const userId = verifyToken(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -358,10 +364,10 @@ app.post('/api/characters', (req, res) => {
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
   const chars = readJSON(CHARS_FILE);
   let char = {
+    ...req.body,
     id: uuidv4(),
     ownerId: userId,
     createdAt: Date.now(),
-    ...req.body
   };
   const key = keyStore.get(userId);
   const plainChar = { ...char }; // return unencrypted to client
@@ -480,7 +486,7 @@ app.post('/api/characters/import/png', (req, res) => {
       tags,
       visibility:   'private',
       avatar:       avatarDataUrl,
-      avatar_emoji: '🎭',
+      avatar_emoji: '✦',
       createdAt:    Date.now(),
     };
     const plainChar = { ...char, firstMessages: [...firstMessages] };
@@ -582,7 +588,7 @@ app.delete('/api/chats/:id', (req, res) => {
 // ─── AI PROXY (Stream) ───────────────────────────────────────────────────────
 
 app.post('/api/chat/stream', async (req, res) => {
-  const { messages, provider, model, systemPrompt } = req.body;
+  const { messages, provider, model, systemPrompt, temperature, max_tokens, top_p } = req.body;
 
   if (!provider || !provider.baseUrl || !provider.apiKey) {
     return res.status(400).json({ error: 'Provider not configured' });
@@ -592,6 +598,9 @@ app.post('/api/chat/stream', async (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
 
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+
   try {
     const fetch = require('node-fetch');
     const payload = {
@@ -600,8 +609,12 @@ app.post('/api/chat/stream', async (req, res) => {
         ? [{ role: 'system', content: systemPrompt }, ...messages]
         : messages,
       stream: true,
-      max_tokens: 2048
     };
+    // Forward client model params (with sane defaults)
+    if (typeof temperature === 'number') payload.temperature = temperature;
+    if (typeof max_tokens  === 'number') payload.max_tokens  = Math.min(max_tokens, 16384);
+    else payload.max_tokens = 2048;
+    if (typeof top_p === 'number') payload.top_p = top_p;
 
     const response = await fetch(`${provider.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -621,14 +634,18 @@ app.post('/api/chat/stream', async (req, res) => {
     }
 
     response.body.on('data', chunk => {
-      res.write(chunk);
+      if (!aborted) res.write(chunk);
     });
-    response.body.on('end', () => res.end());
-    response.body.on('error', () => res.end());
+    response.body.on('end', () => { if (!aborted) res.end(); });
+    response.body.on('error', () => { if (!aborted) res.end(); });
+    // Abort upstream when client disconnects
+    req.on('close', () => { try { response.body.destroy(); } catch {} });
 
   } catch (e) {
-    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-    res.end();
+    if (!aborted) {
+      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      res.end();
+    }
   }
 });
 
@@ -649,7 +666,7 @@ function proxyFetch(url, options = {}) {
       path:     parsed.pathname + parsed.search,
       method:   options.method || 'GET',
       headers:  {
-        'User-Agent':  'Mozilla/5.0 (compatible; TavernAI/3.0; +https://github.com)',
+        'User-Agent':  'Mozilla/5.0 (compatible)',
         'Accept':      options.binary ? '*/*' : 'application/json',
         'Content-Type':'application/json',
         ...(options.headers || {}),
@@ -729,10 +746,15 @@ app.get('/api/chub/avatar', async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) return res.status(400).send('Missing url');
-    // Only allow chub domains
-    if (!url.includes('chub.ai') && !url.includes('charhub.io') && !url.includes('characterhub')) {
-      return res.status(403).send('Forbidden');
-    }
+    // Only allow chub domains — validate hostname properly to prevent SSRF
+    try {
+      const parsed = new URL(decodeURIComponent(url));
+      const host = parsed.hostname.toLowerCase();
+      const allowed = ['chub.ai', 'charhub.io', 'characterhub.io'];
+      if (!allowed.some(d => host === d || host.endsWith('.' + d))) {
+        return res.status(403).send('Forbidden');
+      }
+    } catch { return res.status(400).send('Invalid URL'); }
     const result = await proxyFetch(decodeURIComponent(url));
     const ct = result.headers['content-type'] || 'image/jpeg';
     res.set('Content-Type', ct);
@@ -886,6 +908,6 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🟣 Tavern running at http://localhost:${PORT}`);
+  console.log(`\n🟠 wesaid running at http://localhost:${PORT}`);
   console.log(`📡 Network access via Tailscale also available\n`);
 });
