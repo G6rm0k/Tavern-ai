@@ -28,7 +28,7 @@ const Settings = {
   data: {
     providers:[], activeProviderId:null,
     mp: { temperature:.8, maxTokens:1024, topP:.9, topK:40, contextMessages:20, globalSystem:'' },
-    app: { theme:'dark', accent:'purple', animations:true, autoscroll:true, sound:false },
+    app: { theme:'dark', accent:'orange', animations:true, autoscroll:true, sound:false },
     language:'ru',
   },
 
@@ -56,7 +56,7 @@ const Settings = {
 
   _apply() {
     document.documentElement.setAttribute('data-theme',  this.data.app?.theme  || 'dark');
-    const color = this.data.app?.accentColor || '#8b5cf6';
+    const color = this.data.app?.accentColor || '#f97316';
     document.documentElement.style.setProperty('--accent', color);
     document.documentElement.style.setProperty('--accent-glow', color + '66');
     document.documentElement.style.setProperty('--accent-ultra', color + '18');
@@ -129,7 +129,7 @@ const Settings = {
     const a      = this.data.app || {};
     const mp     = this.data.mp  || MP_PRESETS.balanced;
     const ai     = this.data.activeProviderId;
-    const accent = a.accentColor || '#8b5cf6';
+    const accent = a.accentColor || '#f97316';
 
     const provRows = this.data.providers.map(p => {
       const active = p.id === ai;
@@ -161,7 +161,7 @@ const Settings = {
 
       <!-- AI Providers -->
       <div class="sv-card">
-        <div class="sv-title">🤖 AI Провайдеры</div>
+        <div class="sv-title">✦ Сервисы</div>
         <div class="sv-provs">${provRows}</div>
         <button class="sv-add" onclick="Settings.addProv()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="15" height="15"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -171,9 +171,9 @@ const Settings = {
 
       <!-- Model params -->
       <div class="sv-card">
-        <div class="sv-title">⚙️ Параметры модели</div>
+        <div class="sv-title">◆ Параметры модели</div>
         <div class="sv-chips">
-          ${[['creative','🎨','Творч.'],['balanced','⚖️','Баланс'],['precise','🎯','Точный']]
+          ${[['creative','◇','Творч.'],['balanced','◈','Баланс'],['precise','◆','Точный']]
             .map(([k,ico,lbl]) => `
               <button class="sv-chip ${curPre===k?'on':''}" onclick="Settings.applyPreset('${k}')">
                 <span>${ico}</span><small>${lbl}</small>
@@ -187,7 +187,7 @@ const Settings = {
           ${this._sl('contextMessages', 'Контекст',     mp.contextMessages, 2,   100,  2)}
         </div>
         <div class="sv-field">
-          <div class="sv-label">Системный промпт</div>
+          <div class="sv-label">Инструкции</div>
           <textarea id="sv-gsys" class="sv-textarea" rows="3"
             placeholder="Отвечай только на русском языке.">${mp.globalSystem || ''}</textarea>
         </div>
@@ -196,7 +196,7 @@ const Settings = {
 
       <!-- Appearance -->
       <div class="sv-card">
-        <div class="sv-title">🎨 Внешний вид</div>
+        <div class="sv-title">◈ Внешний вид</div>
         <div class="sv-label">Тема</div>
         <div class="sv-2col">
           <button class="sv-opt ${a.theme !== 'light' ? 'on' : ''}" onclick="Settings.setTheme('dark')">🌙 Тёмная</button>
@@ -216,7 +216,7 @@ const Settings = {
           </div>
         </div>
         <div class="sv-sep"></div>
-        ${this._tog('animations', '✨ Анимации',   'Плавные переходы',        a.animations !== false)}
+        ${this._tog('animations', '✦ Анимации',   'Плавные переходы',        a.animations !== false)}
         <div id="sv-speed-wrap" style="${a.animations === false ? 'opacity:.4;pointer-events:none' : ''}">
           ${this._sl('animSpeed', 'Скорость', a.animSpeed ?? 1, 0.2, 3, 0.1, v => (v*100).toFixed(0)+'%')}
         </div>
@@ -253,9 +253,9 @@ const Settings = {
       <!-- About -->
       <div class="sv-card">
         <div class="sv-about">
-          <div class="sv-about-logo">Tavern</div>
+          <div class="sv-about-logo">wesaid</div>
           <div class="sv-about-ver">v3.0.0</div>
-          <div class="sv-about-desc">AI Chat Frontend</div>
+          <div class="sv-about-desc">Chat Frontend</div>
         </div>
       </div>
 
@@ -375,7 +375,7 @@ const Settings = {
     const data = { settings: this.data, exportedAt: Date.now() };
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type:'application/json' }));
-    a.download = `tavern-settings-${Date.now()}.json`;
+    a.download = `wesaid-settings-${Date.now()}.json`;
     a.click();
     toast('Экспортировано!', 'success');
   },

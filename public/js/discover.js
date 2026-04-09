@@ -5,7 +5,7 @@ const Discover = {
   lastQuery: '',
   activeCategory: null,   // null = no filter (show all)
   results: [],
-  favorites: JSON.parse(localStorage.getItem('tavern_favs') || '[]'),
+  favorites: JSON.parse(localStorage.getItem('wesaid_favs') || '[]'),
 
   CATS: [
     { id:'russian',    label:'🇷🇺 Русские',   tags:'russian',      nsfw:false },
@@ -13,7 +13,7 @@ const Discover = {
     { id:'game',       label:'🎮 Игры',         tags:'video-game',   nsfw:false },
     { id:'fantasy',    label:'🧙 Фэнтези',      tags:'fantasy',      nsfw:false },
     { id:'romance',    label:'💕 Романтика',    tags:'romance',      nsfw:false },
-    { id:'assistant',  label:'🤖 Ассистент',    tags:'assistant',    nsfw:false },
+    { id:'assistant',  label:'✦ Ассистент',    tags:'assistant',    nsfw:false },
     { id:'historical', label:'🏛 История',       tags:'historical',   nsfw:false },
     { id:'scifi',      label:'🚀 Sci-Fi',        tags:'sci-fi',       nsfw:false },
     { id:'nsfw',       label:'🔞 18+',           tags:'nsfw',         nsfw:true  },
@@ -124,7 +124,7 @@ const Discover = {
     const idx = this.favorites.findIndex(f => f.fullPath === fullPath);
     if (idx >= 0) { this.favorites.splice(idx, 1); toast('Убрано из избранного', 'info'); }
     else          { this.favorites.push({ fullPath, name, avatar, addedAt: Date.now() }); toast('⭐ В избранном!', 'success'); }
-    localStorage.setItem('tavern_favs', JSON.stringify(this.favorites));
+    localStorage.setItem('wesaid_favs', JSON.stringify(this.favorites));
     const card = document.querySelector(`.disc-card[data-path="${CSS.escape(fullPath)}"]`);
     if (card) {
       const fav = this.isFav(fullPath);
@@ -147,13 +147,13 @@ const Discover = {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="disc-ico">
                 <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
               </svg>
-              <input id="disc-q" class="disc-inp" placeholder="Поиск персонажей на Chub.ai…" autocomplete="off" />
+              <input id="disc-q" class="disc-inp" placeholder="Поиск персонажей…" autocomplete="off" />
               <button id="disc-clr" class="disc-clr-btn" style="display:none">✕</button>
             </div>
           </div>
           <div class="disc-cats-row" id="disc-cats">
             <button class="disc-cat-btn ${!this.activeCategory ? 'on' : ''}" data-id=""
-              onclick="Discover._pickCat(this)">✨ Все</button>
+              onclick="Discover._pickCat(this)">✦ Все</button>
             ${this.CATS.map(c => `
               <button class="disc-cat-btn ${c.id === this.activeCategory ? 'on' : ''}"
                 data-id="${c.id}" data-tags="${c.tags}"
@@ -226,7 +226,7 @@ const Discover = {
 
         <div class="disc-section">
           <div class="disc-section-hd">
-            <span class="disc-section-title">🔥 Популярные</span>
+            <span class="disc-section-title">▸ Популярные</span>
             <button class="disc-section-more" onclick="Discover._pickCatById('russian')">Все →</button>
           </div>
           <div class="disc-hscroll-wrap">
@@ -238,7 +238,7 @@ const Discover = {
 
         <div class="disc-section">
           <div class="disc-section-hd">
-            <span class="disc-section-title">✨ Новинки</span>
+            <span class="disc-section-title">▸ Новинки</span>
             <button class="disc-section-more" onclick="Discover._pickCatById('anime')">Все →</button>
           </div>
           <div class="disc-hscroll-wrap">
@@ -250,7 +250,7 @@ const Discover = {
 
         <div class="disc-section">
           <div class="disc-section-hd">
-            <span class="disc-section-title">🎲 Случайные</span>
+            <span class="disc-section-title">▸ Случайные</span>
             <button class="disc-section-more" onclick="Discover._pickCatById('fantasy')">Все →</button>
           </div>
           <div class="disc-hscroll-wrap">
@@ -262,7 +262,7 @@ const Discover = {
 
         <div class="disc-section">
           <div class="disc-section-hd">
-            <span class="disc-section-title">🎮 Игровые</span>
+            <span class="disc-section-title">▸ Игровые</span>
             <button class="disc-section-more" onclick="Discover._pickCatById('game')">Все →</button>
           </div>
           <div class="disc-hscroll-wrap">
@@ -292,7 +292,7 @@ const Discover = {
     const items = App.chats.slice(0, 12).map(chat => {
       const av = chat.characterAvatar
         ? `<img src="${chat.characterAvatar}" onerror="this.style.display='none'" />`
-        : `<span>${chat.characterAvatarEmoji || '🤖'}</span>`;
+        : `<span>${chat.characterAvatarEmoji || '✦'}</span>`;
       return `<button class="disc-recent-card" onclick="Chat.load('${this._safe(chat.id)}')">
         <div class="disc-recent-av">${av}</div>
         <div class="disc-recent-name">${this._html(chat.characterName)}</div>
@@ -316,7 +316,7 @@ const Discover = {
     const items = shuffled.map(c => {
       const av = c.avatar
         ? `<img src="${c.avatar}" onerror="this.style.display='none'" />`
-        : `<span>${c.avatar_emoji || '🤖'}</span>`;
+        : `<span>${c.avatar_emoji || '✦'}</span>`;
       return `<button class="disc-recent-card" onclick="Chat.startWith('${this._safe(c.id)}')">
         <div class="disc-recent-av">${av}</div>
         <div class="disc-recent-name">${this._html(c.name)}</div>
@@ -325,7 +325,7 @@ const Discover = {
 
     return `<div class="disc-section">
       <div class="disc-section-hd">
-        <span class="disc-section-title">🎭 Мои персонажи</span>
+        <span class="disc-section-title">✦ Мои персонажи</span>
         <button class="disc-section-more" onclick="App.navigate('home')">Все →</button>
       </div>
       <div class="disc-hscroll-wrap">
@@ -423,7 +423,7 @@ const Discover = {
         <div class="disc-card-cover">
           ${f.avatar
             ? `<img class="disc-cover-img" src="/api/chub/avatar?url=${encodeURIComponent(f.avatar)}" loading="lazy" onerror="this.style.display='none'" />`
-            : '<div class="disc-cover-placeholder">🎭</div>'}
+            : '<div class="disc-cover-placeholder">✦</div>'}
         </div>
         <div class="disc-card-info">
           <div class="disc-card-name">${this._html(f.name)}</div>
@@ -449,7 +449,7 @@ const Discover = {
       <div class="disc-hcard-av">
         ${proxied
           ? `<img src="${proxied}" loading="lazy" onerror="this.style.display='none'" />`
-          : '<span>🎭</span>'}
+          : '<span>✦</span>'}
         ${added ? '<div class="disc-hcard-badge">✓</div>' : ''}
       </div>
       <div class="disc-hcard-name">${this._html(name)}</div>
@@ -506,8 +506,8 @@ const Discover = {
         ${proxied
           ? `<img class="disc-cover-img" src="${proxied}" loading="lazy"
                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />
-             <div class="disc-cover-placeholder" style="display:none">🎭</div>`
-          : '<div class="disc-cover-placeholder">🎭</div>'}
+             <div class="disc-cover-placeholder" style="display:none">✦</div>`
+          : '<div class="disc-cover-placeholder">✦</div>'}
         ${(tokens || msgs) ? `<div class="disc-cover-stats">
           ${tokens ? `<span>🪙 ${tokens}</span>` : ''}
           ${msgs   ? `<span>💬 ${msgs}</span>` : ''}
@@ -565,6 +565,6 @@ const Discover = {
   },
 
   // Escape for use in HTML attribute strings
-  _safe(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); },
+  _safe(s) { return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
   _html(s)  { return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); },
 };

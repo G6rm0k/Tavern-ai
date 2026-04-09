@@ -17,7 +17,7 @@ const Characters = {
     if (!chars.length) {
       container.innerHTML = `
         <div class="empty">
-          <div class="empty-ico">🎭</div>
+          <div class="empty-ico">✦</div>
           <h3>No characters yet</h3>
           <p>Create your first character or import from Chub.ai</p>
           <button class="btn btn-primary" onclick="App.navigate('create')">
@@ -36,8 +36,8 @@ const Characters = {
 
   _cardHtml(c) {
     const avatarHtml = c.avatar
-      ? `<img src="${c.avatar}" alt="${c.name}" onerror="this.parentElement.textContent='🤖'" />`
-      : `<span>${c.avatar_emoji || '🤖'}</span>`;
+      ? `<img src="${c.avatar}" alt="${c.name}" onerror="this.parentElement.textContent='✦'" />`
+      : `<span>${c.avatar_emoji || '✦'}</span>`;
     const isPublic = c.visibility === 'public';
     const isOwner = c.ownerId === API.token;
     return `
@@ -86,14 +86,14 @@ const Characters = {
 
           <div class="avatar-uploader">
             <div class="av-prev" id="avatar-preview" onclick="document.getElementById('avatar-file').click()">
-              ${c.avatar ? `<img src="${c.avatar}" id="avatar-img" />` : `<span id="avatar-emoji">${c.avatar_emoji || '🤖'}</span>`}
+              ${c.avatar ? `<img src="${c.avatar}" id="avatar-img" />` : `<span id="avatar-emoji">${c.avatar_emoji || '✦'}</span>`}
             </div>
             <div style="flex:1">
               <div style="display:flex;gap:8px;margin-bottom:8px">
                 <button class="btn btn-ghost" onclick="document.getElementById('avatar-file').click()" style="font-size:13px">Upload Image</button>
               </div>
               <div class="hint">PNG/JPG, also supports Chub.ai PNG cards</div>
-              <input id="avatar-emoji-input" type="text" placeholder="Or enter emoji 🤖" value="${c.avatar_emoji || ''}" style="margin-top:8px" />
+              <input id="avatar-emoji-input" type="text" placeholder="Or enter emoji ✦" value="${c.avatar_emoji || ''}" style="margin-top:8px" />
             </div>
             <input type="file" id="avatar-file" accept="image/*,.png" class="hidden" />
           </div>
@@ -158,7 +158,7 @@ const Characters = {
           <div class="drop-zone" id="import-drop">
             <div style="font-size:32px;margin-bottom:8px">📦</div>
             <div style="font-weight:500;margin-bottom:4px">Drop PNG or JSON here</div>
-            <div class="hint">Supports Chub.ai PNG cards and Tavern JSON exports</div>
+            <div class="hint">PNG cards or JSON exports</div>
             <input type="file" id="import-file" accept=".png,.json" class="hidden" />
           </div>
         </div>
@@ -341,7 +341,7 @@ const Characters = {
       systemPrompt: document.getElementById('char-system').value.trim(),
       firstMessages: greetings,
       visibility: document.getElementById('char-visibility').value,
-      avatar_emoji: document.getElementById('avatar-emoji-input').value.trim() || '🤖',
+      avatar_emoji: document.getElementById('avatar-emoji-input').value.trim() || '✦',
       avatar: Characters._avatarData || null
     };
 

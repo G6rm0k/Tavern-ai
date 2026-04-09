@@ -1,8 +1,8 @@
 @echo off
-title Tavern
+title wesaid
 
 echo.
-echo   Tavern - AI Companion
+echo   wesaid
 echo   Starting server...
 echo.
 

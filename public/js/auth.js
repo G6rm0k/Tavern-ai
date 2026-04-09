@@ -18,8 +18,8 @@ const Auth = {
     const el = document.getElementById('page-auth');
     el.innerHTML = `
       <div class="auth-container">
-        <div class="auth-logo">Tavern</div>
-        <div class="auth-tagline">Your local AI companion hub</div>
+        <div class="auth-logo">wesaid</div>
+        <div class="auth-tagline">Your private chat space</div>
 
         <div class="auth-card">
           <div class="auth-tabs">

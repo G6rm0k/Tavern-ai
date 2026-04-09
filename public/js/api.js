@@ -1,11 +1,11 @@
 // ─── API CLIENT ──────────────────────────────────────────────────────────────
 const API = {
-  token: localStorage.getItem('tavern_token'),
+  token: localStorage.getItem('wesaid_token'),
 
   setToken(t) {
     this.token = t;
-    if (t) localStorage.setItem('tavern_token', t);
-    else localStorage.removeItem('tavern_token');
+    if (t) localStorage.setItem('wesaid_token', t);
+    else localStorage.removeItem('wesaid_token');
   },
 
   headers() {
@@ -57,12 +57,21 @@ const API = {
   deleteChat: (id) => API.del(`/api/chats/${id}`),
 
   // Stream AI
+  _streamCtrl: null,
+
+  abortStream() {
+    if (this._streamCtrl) { this._streamCtrl.abort(); this._streamCtrl = null; }
+  },
+
   async stream(payload, onChunk, onDone, onError) {
+    this.abortStream();
+    this._streamCtrl = new AbortController();
     try {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: this.headers(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: this._streamCtrl.signal,
       });
 
       if (!res.ok) {
@@ -98,9 +107,15 @@ const API = {
           } catch {}
         }
       }
+      this._streamCtrl = null;
       onDone(fullText);
     } catch (e) {
+      this._streamCtrl = null;
+      if (e.name === 'AbortError') return; // intentional cancel
       onError(e.message);
     }
-  }
+  },
+
+  // Logout
+  logout: () => API.post('/api/auth/logout'),
 };

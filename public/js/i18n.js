@@ -5,7 +5,7 @@ const STRINGS = {
     'auth.login': 'Войти', 'auth.register': 'Создать аккаунт',
     'auth.username': 'Имя пользователя', 'auth.password': 'Пароль',
     'auth.displayName': 'Отображаемое имя', 'auth.local': 'Только локально — данные хранятся на вашем ПК 🔒',
-    'auth.signing': 'Входим...', 'auth.creating': 'Создаём...', 'auth.tagline': 'Ваш локальный AI-компаньон',
+    'auth.signing': 'Входим...', 'auth.creating': 'Создаём...', 'auth.tagline': 'Ваше личное пространство для чатов',
     // Nav
     'nav.home': 'Главная', 'nav.discover': 'Открыть', 'nav.create': 'Создать', 'nav.account': 'Профиль', 'nav.settings': 'Настройки',
     // Home
@@ -57,7 +57,7 @@ const STRINGS = {
     'toast.saved': 'Сохранено!', 'toast.deleted': 'Удалено', 'toast.copied': 'Скопировано!',
     'toast.imported': 'Импортировано!', 'toast.error': 'Ошибка',
     // Setup
-    'setup.title': 'Настройка AI', 'setup.subtitle': 'Подключите любой OpenAI-совместимый провайдер',
+    'setup.title': 'Настройка', 'setup.subtitle': 'Подключите сервис для начала работы',
     'setup.name': 'Название', 'setup.url': 'Base URL', 'setup.key': 'API Ключ',
     'setup.model': 'Модель', 'setup.save': 'Сохранить и продолжить →',
     'setup.skip': 'Пропустить',
@@ -66,7 +66,7 @@ const STRINGS = {
     'auth.login': 'Sign In', 'auth.register': 'Create Account',
     'auth.username': 'Username', 'auth.password': 'Password',
     'auth.displayName': 'Display Name', 'auth.local': 'Local only — data stays on your PC 🔒',
-    'auth.signing': 'Signing in...', 'auth.creating': 'Creating...', 'auth.tagline': 'Your local AI companion hub',
+    'auth.signing': 'Signing in...', 'auth.creating': 'Creating...', 'auth.tagline': 'Your private chat space',
     'nav.home': 'Home', 'nav.discover': 'Discover', 'nav.create': 'Create', 'nav.account': 'Account', 'nav.settings': 'Settings',
     'home.welcome': 'Welcome back', 'home.subtitle': 'Pick up where you left off or start fresh',
     'home.new': 'New Character', 'home.recent': 'Recent Chats',
@@ -108,7 +108,7 @@ const STRINGS = {
     'profile.logout': 'Sign Out', 'profile.banner': 'Change Banner', 'profile.avatar': 'Change Avatar',
     'toast.saved': 'Saved!', 'toast.deleted': 'Deleted', 'toast.copied': 'Copied!',
     'toast.imported': 'Imported!', 'toast.error': 'Error',
-    'setup.title': 'Configure AI', 'setup.subtitle': 'Connect any OpenAI-compatible API provider',
+    'setup.title': 'Setup', 'setup.subtitle': 'Connect a service to get started',
     'setup.name': 'Name', 'setup.url': 'Base URL', 'setup.key': 'API Key',
     'setup.model': 'Model', 'setup.save': 'Save & Continue →',
     'setup.skip': 'Skip for now',
@@ -116,7 +116,7 @@ const STRINGS = {
 };
 
 const i18n = {
-  lang: localStorage.getItem('tavern_lang') || 'ru',
+  lang: localStorage.getItem('wesaid_lang') || localStorage.getItem('tavern_lang') || 'ru',
 
   t(key) {
     return STRINGS[this.lang]?.[key] || STRINGS['en']?.[key] || key;
@@ -124,7 +124,7 @@ const i18n = {
 
   setLang(lang) {
     this.lang = lang;
-    localStorage.setItem('tavern_lang', lang);
+    localStorage.setItem('wesaid_lang', lang);
     document.documentElement.lang = lang;
     // Dispatch event to re-render
     window.dispatchEvent(new CustomEvent('langChange'));

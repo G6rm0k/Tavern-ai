@@ -8,13 +8,13 @@ function _patchEsc(s) {
 
 Characters.renderList = function(container, chars) {
   if (!chars || !chars.length) {
-    container.innerHTML = `<div class="empty"><div class="empty-ico">🎭</div><h3>${t('char.empty')}</h3><p>${t('char.empty.hint')}</p><button class="btn btn-primary" onclick="App.navigate('create')">+ ${t('home.new')}</button></div>`;
+    container.innerHTML = `<div class="empty"><div class="empty-ico">✦</div><h3>${t('char.empty')}</h3><p>${t('char.empty.hint')}</p><button class="btn btn-primary" onclick="App.navigate('create')">+ ${t('home.new')}</button></div>`;
     return;
   }
   container.innerHTML = chars.map(c => {
     const av = c.avatar
-      ? `<img src="${c.avatar}" onerror="this.parentElement.textContent='🤖'" />`
-      : `<span>${c.avatar_emoji || '🤖'}</span>`;
+      ? `<img src="${c.avatar}" onerror="this.parentElement.textContent='✦'" />`
+      : `<span>${c.avatar_emoji || '✦'}</span>`;
     return `<div class="char-card" data-id="${c.id}">
       <div class="char-card-av">${av}</div>
       <div class="char-card-body">
