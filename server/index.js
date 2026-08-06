@@ -313,6 +313,11 @@ process.on('unhandledRejection', (e) => {
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001'] }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// Avatars live on disk now and are served as ordinary files, so the browser can
+// cache them instead of re-downloading megabytes of base64 with every list.
+app.use('/avatars', express.static(path.join(DATA_DIR, 'avatars'), {
+  maxAge: '7d', immutable: true, fallthrough: true,
+}));
 
 const globalLimit = rateLimit({ windowMs: 15*60*1000, max: 500, standardHeaders: true, legacyHeaders: false });
 const authLimit   = rateLimit({ windowMs: 15*60*1000, max: 30,  standardHeaders: true, legacyHeaders: false });
@@ -343,6 +348,99 @@ const requireUser = (req, res) => {
   }
   return userId;
 };
+
+// ─── AVATAR STORAGE ─────────────────────────────────────────────────────────
+// Avatars used to be embedded as base64 data URLs inside characters.json, which
+// is why that file grew to tens of MB: every character list request shipped all
+// of them to the browser, and every save rewrote them. They are files now; the
+// JSON keeps only a path.
+
+const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
+if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+
+const AVATAR_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+// Returns a servable path, or the input unchanged when it is not a data URL.
+function storeAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('data:image/')) return value;
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(value);
+  if (!m) return null;
+  const ext = AVATAR_EXT[m[1].toLowerCase()] || 'png';
+  try {
+    const buf = Buffer.from(m[2], 'base64');
+    if (!buf.length) return null;
+    const name = `${uuidv4()}.${ext}`;
+    fs.writeFileSync(path.join(AVATARS_DIR, name), buf);
+    return `/avatars/${name}`;
+  } catch (e) {
+    console.warn('Не удалось сохранить аватар:', e.message);
+    return null;
+  }
+}
+
+function deleteAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('/avatars/')) return;
+  const name = path.basename(value);
+  try { fs.unlinkSync(path.join(AVATARS_DIR, name)); } catch {}
+}
+
+// Inline a stored avatar back into a data URL, so a backup file stands alone.
+function inlineAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('/avatars/')) return value;
+  try {
+    const name = path.basename(value);
+    const ext  = path.extname(name).slice(1).toLowerCase();
+    const mime = Object.keys(AVATAR_EXT).find(k => AVATAR_EXT[k] === ext) || 'image/png';
+    const buf  = fs.readFileSync(path.join(AVATARS_DIR, name));
+    return `data:${mime};base64,` + buf.toString('base64');
+  } catch { return null; }
+}
+
+// One-time migration of anything still embedded in the JSON files.
+function migrateEmbeddedAvatars() {
+  let moved = 0;
+  try {
+    const chars = readJSON(CHARS_FILE);
+    for (const c of chars) {
+      if (typeof c.avatar === 'string' && c.avatar.startsWith('data:image/')) {
+        c.avatar = storeAvatar(c.avatar);
+        moved++;
+      }
+    }
+    if (moved) writeJSON(CHARS_FILE, chars);
+
+    const users = readJSON(USERS_FILE);
+    let userMoved = 0;
+    for (const u of users) {
+      for (const field of ['avatar', 'banner']) {
+        if (typeof u[field] === 'string' && u[field].startsWith('data:image/')) {
+          u[field] = storeAvatar(u[field]);
+          userMoved++;
+        }
+      }
+    }
+    if (userMoved) writeJSON(USERS_FILE, users);
+    moved += userMoved;
+
+    const chats = readJSON(CHATS_FILE);
+    let chatMoved = 0;
+    for (const ch of chats) {
+      if (typeof ch.characterAvatar === 'string' && ch.characterAvatar.startsWith('data:image/')) {
+        ch.characterAvatar = storeAvatar(ch.characterAvatar);
+        chatMoved++;
+      }
+    }
+    if (chatMoved) writeJSON(CHATS_FILE, chats);
+    moved += chatMoved;
+
+    if (moved) {
+      flushAll();
+      console.log(`🖼️  Вынесено ${moved} изображений из JSON в data/avatars`);
+    }
+  } catch (e) {
+    console.warn('Миграция аватаров не удалась:', e.message);
+  }
+}
 
 // ─── STARTER CHARACTERS ─────────────────────────────────────────────────────
 // A brand new account used to land on an empty screen with nothing to click.
@@ -562,7 +660,15 @@ app.patch('/api/auth/profile', (req, res) => {
   }
   const allowed = ['displayName', 'username', 'bio', 'avatar', 'banner'];
   allowed.forEach(key => {
-    if (req.body[key] !== undefined) users[idx][key] = req.body[key];
+    if (req.body[key] === undefined) return;
+    if (key === 'avatar' || key === 'banner') {
+      const stored = storeAvatar(req.body[key]);
+      if (stored === null) return; // unreadable image, keep the old one
+      if (stored !== users[idx][key]) deleteAvatar(users[idx][key]);
+      users[idx][key] = stored;
+    } else {
+      users[idx][key] = req.body[key];
+    }
   });
   writeJSON(USERS_FILE, users);
   const { password: _, ...safeUser } = users[idx];
@@ -642,6 +748,7 @@ app.post('/api/characters', (req, res) => {
   const chars = readJSON(CHARS_FILE);
   let char = {
     ...req.body,
+    avatar: storeAvatar(req.body.avatar) || null,
     id: uuidv4(),
     ownerId: userId,
     createdAt: Date.now(),
@@ -665,6 +772,11 @@ app.put('/api/characters/:id', (req, res) => {
   // send stay encrypted, which breaks the moment the character is made public.
   const current = key ? decryptCharacter(chars[idx], key) : chars[idx];
   let updated = { ...current, ...req.body, id: chars[idx].id, ownerId: userId };
+  if (req.body.avatar !== undefined) {
+    const stored = storeAvatar(req.body.avatar);
+    updated.avatar = stored === null ? current.avatar : stored;
+    if (updated.avatar !== current.avatar) deleteAvatar(current.avatar);
+  }
   const plainUpdated = { ...updated };
   if (key) updated = encryptCharacter(updated, key);
   chars[idx] = updated;
@@ -675,9 +787,10 @@ app.put('/api/characters/:id', (req, res) => {
 app.delete('/api/characters/:id', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
-  let chars = readJSON(CHARS_FILE);
-  chars = chars.filter(c => !(c.id === req.params.id && c.ownerId === userId));
-  writeJSON(CHARS_FILE, chars);
+  const chars = readJSON(CHARS_FILE);
+  const doomed = chars.find(c => c.id === req.params.id && c.ownerId === userId);
+  if (doomed) deleteAvatar(doomed.avatar); // don't leave orphan files behind
+  writeJSON(CHARS_FILE, chars.filter(c => c !== doomed));
   res.json({ ok: true });
 });
 
@@ -747,8 +860,8 @@ app.post('/api/characters/import/png', (req, res) => {
 
     const tags = d.tags || charData.topics || [];
 
-    // Embed the PNG itself as avatar (data URL)
-    const avatarDataUrl = "data:image/png;base64," + base64;
+    // Keep the card art, but on disk rather than inside the JSON.
+    const avatarPath = storeAvatar("data:image/png;base64," + base64);
 
     if (!shouldSave) {
       // Just return parsed data (for form-filling)
@@ -766,7 +879,7 @@ app.post('/api/characters/import/png', (req, res) => {
       firstMessages,
       tags,
       visibility:   'private',
-      avatar:       avatarDataUrl,
+      avatar:       avatarPath,
       avatar_emoji: '✦',
       createdAt:    Date.now(),
     };
@@ -1395,12 +1508,14 @@ app.get('/api/backup', (req, res) => {
   const withKeys = req.query.keys === '1';
   const key = keyStore.get(userId);
 
+  // Avatars are inlined so the backup file is self-contained and can be moved
+  // to another machine on its own.
   const chars = readJSON(CHARS_FILE)
     .filter(c => c.ownerId === userId)
-    .map(c => decryptCharacter(c, key));
+    .map(c => ({ ...decryptCharacter(c, key), avatar: inlineAvatar(c.avatar) }));
   const chats = readJSON(CHATS_FILE)
     .filter(c => c.userId === userId)
-    .map(c => decryptChat(c, key));
+    .map(c => ({ ...decryptChat(c, key), characterAvatar: inlineAvatar(c.characterAvatar) }));
 
   const allSettings = readJSON(SETTINGS_FILE);
   let settings = allSettings[userId] ? JSON.parse(JSON.stringify(allSettings[userId])) : {};
@@ -1434,7 +1549,9 @@ app.post('/api/restore', (req, res) => {
       const existing = new Set(chars.filter(c => c.ownerId === userId).map(c => c.id));
       for (const c of backup.characters) {
         if (!c?.name || existing.has(c.id)) continue; // never clobber what is already here
-        chars.push(encryptCharacter({ ...c, id: c.id || uuidv4(), ownerId: userId }, key));
+        chars.push(encryptCharacter({
+          ...c, id: c.id || uuidv4(), ownerId: userId, avatar: storeAvatar(c.avatar) || null,
+        }, key));
         stats.characters++;
       }
       writeJSON(CHARS_FILE, chars);
@@ -1445,7 +1562,9 @@ app.post('/api/restore', (req, res) => {
       const existing = new Set(chats.filter(c => c.userId === userId).map(c => c.id));
       for (const c of backup.chats) {
         if (!c?.id || existing.has(c.id)) continue;
-        chats.push(encryptChat({ ...c, userId }, key));
+        chats.push(encryptChat({
+          ...c, userId, characterAvatar: storeAvatar(c.characterAvatar) || null,
+        }, key));
         stats.chats++;
       }
       writeJSON(CHATS_FILE, chats);
@@ -1571,4 +1690,5 @@ function start(port, attemptsLeft = 10) {
 }
 
 let ACTIVE_PORT = PORT;
+migrateEmbeddedAvatars();
 start(PORT);

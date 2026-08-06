@@ -16,32 +16,53 @@ npm run dev    # то же самое
 **Full-stack SPA** — локальный AI-чат с персонажами. Альтернатива SillyTavern.
 
 ### Backend
-Весь бэкенд — один файл `server/index.js` (~900 строк). Express.js, файловое хранилище (JSON), без БД.
+Весь бэкенд — один файл `server/index.js`. Express.js, файловое хранилище (JSON), без БД.
 
 Основные зоны в файле:
-- Шифрование (AES-256-GCM) + ключи в памяти (`Map<userId, keyBuffer>`), не на диске
+- Слой хранилища: кэш в памяти + дебаунс-запись, атомарно (tmp+rename), ротация `.bak1/.bak2`,
+  автовосстановление повреждённого JSON. Флаш на SIGINT/SIGTERM/exit.
+- Шифрование (AES-256-GCM), ключ выводится из пароля и живёт только в памяти
+  (`Map<userId, keyBuffer>`). Ключа нет → `requireUser` отдаёт 401 `NEED_UNLOCK`,
+  фронт просит пароль (`/api/auth/unlock`). Смена пароля (`/api/auth/password`)
+  перешифровывает все данные пользователя.
 - JWT-аутентификация (90 дней, persistent `.jwtsecret`)
-- API endpoints: `/api/auth/*`, `/api/characters/*`, `/api/chats/*`, `/api/settings`, `/api/chat/stream`
+- API: `/api/auth/*`, `/api/characters/*`, `/api/chats/*`, `/api/settings`,
+  `/api/chat/stream`, `/api/provider/test`, `/api/models`, `/api/local/detect`,
+  `/api/backup`, `/api/restore`, `/api/netinfo`
 - Прокси до Chub.AI (`/api/chub/*`) и переводчик (MyMemory)
 
-Данные: `data/characters.json` (~28MB), `data/chats.json` (~27MB), `data/users.json`, `data/settings.json`.
+Данные: `data/*.json` + `data/avatars/` (картинки лежат файлами, в JSON только путь).
 
-Шифруются (префикс `enc:`): API-ключи, системные промты, описания персонажей, контент сообщений.
+Шифруются (префикс `enc:`): API-ключи, системные промты и описания **приватных**
+персонажей, контент сообщений. Публичные персонажи хранятся открыто — иначе их
+не смогли бы прочитать другие пользователи.
 
 ### Frontend
 Vanilla JS, без фреймворков и без сборщика. `public/js/` — модули-синглтоны с методами `init()` / `render()` / `load()`.
 
 Ключевые модули:
-- `app.js` — роутинг между views (`home`, `chat`, `discover`, `settings`)
-- `chat.js` — стриминг через `ReadableStream` (SSE от `/api/chat/stream`)
+- `util.js` — `esc/escAttr/escJs` (экранирование обязательно: имена персонажей
+  приходят с Chub.AI) и `humanError()` — маппинг ошибок провайдера в понятный текст
+- `app.js` — роутинг между views (`home`, `chat`, `discover`, `settings`), модалка разблокировки
+- `chat.js` — стриминг через `ReadableStream` (SSE от `/api/chat/stream`), черновики, «Стоп»
+- `wizard.js` — визард первого запуска с реальной проверкой подключения
 - `characters.js` + `charwizard.js` — управление и импорт персонажей
 - `discover.js` — поиск по Chub.AI
-- `settings.js` + `modelloader.js` — провайдеры и параметры модели
-- `i18n.js` — i18n, русский по умолчанию
+- `settings.js` + `modelloader.js` — сервисы и параметры модели
+- `qr.js` — автономный генератор QR (версии 1–6, уровень M), без внешних зависимостей
+- `i18n.js` — все пользовательские строки; язык по умолчанию берётся из системного
 
 ### LLM Providers
 Поддерживаются: OpenAI, OpenRouter, Anthropic, VseGPT, Ollama, LM Studio, Groq, Together AI, Mistral, DeepSeek, Cohere, xAI, Custom.
 Добавить нового провайдера — дописать объект в массив `API_PRESETS` в `server/index.js`.
 
+### LLM dialects
+По умолчанию всё идёт в `${baseUrl}/chat/completions` с `Authorization: Bearer`.
+Anthropic говорит иначе — `/v1/messages`, заголовок `x-api-key`, отдельное поле
+`system` и свой формат SSE; за это отвечают `buildUpstream()` и `anthropicToOpenAI()`
+в `server/index.js`. Новый провайдер с другим протоколом добавляется туда же.
+
 ### Startup
-При каждом старте сервер: генерирует/загружает JWT-секрет, чистит битые записи персонажей, мигрирует plaintext-пароли в bcrypt, форсит DNS 8.8.8.8 (для Docker/WSL/VPN).
+При каждом старте сервер: генерирует/загружает JWT-секрет, чистит битые записи персонажей,
+мигрирует plaintext-пароли в bcrypt, выносит base64-картинки из JSON в `data/avatars/`,
+форсит DNS 8.8.8.8 (для Docker/WSL/VPN). Если порт занят — берёт следующий свободный.
