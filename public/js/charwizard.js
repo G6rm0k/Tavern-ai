@@ -285,11 +285,12 @@ const CharWizard = {
       this._parseResponse(full, typing);
 
     } catch(e) {
+      const msg = '⚠️ ' + humanError(e).text;
       if (typing) {
         typing.classList.remove('typing');
-        typing.querySelector('.wiz-msg-text').innerHTML = '⚠️ <b>Ошибка:</b> ' + e.message;
+        typing.querySelector('.wiz-msg-text').textContent = msg;
       } else {
-        this._addMsg('bot', '⚠️ Ошибка: ' + e.message);
+        this._addMsg('bot', msg);
       }
     } finally {
       if (sendBtn) sendBtn.disabled = false;
@@ -423,7 +424,8 @@ const CharWizard = {
 
     const div = document.createElement('div');
     div.className = `wiz-msg wiz-msg-${role}${isTyping ? ' typing' : ''}`;
-    div.innerHTML = `<div class="wiz-msg-text">${text.replace(/\n/g, '<br>')}</div>`;
+    // This renders model output, so escape it before turning newlines into <br>.
+    div.innerHTML = `<div class="wiz-msg-text">${esc(text).replace(/\n/g, '<br>')}</div>`;
     msgs.appendChild(div);
     this._scrollDown();
     return div;

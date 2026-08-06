@@ -472,6 +472,7 @@ const Chat = {
 
   async clearChat() {
     if (!confirm(t('chat.clear') + '?')) return;
+    this.clearDraft();
     this.current.messages = [];
     const char = Characters.getById(this.current.characterId);
     if (char?.firstMessages?.length) {

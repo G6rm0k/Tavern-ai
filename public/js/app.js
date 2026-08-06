@@ -672,7 +672,12 @@ function toastAction(msg, label, onClick) {
 function toastUndo(msg, onUndo) {
   const el = document.createElement('div');
   el.className = 'toast info';
-  el.innerHTML = `<span>🗑</span><span style="flex:1">${msg}</span><button class="toast-undo-btn">Undo</button>`;
+  const ico = document.createElement('span'); ico.textContent = '🗑';
+  const txt = document.createElement('span'); txt.style.flex = '1'; txt.textContent = msg;
+  const undo = document.createElement('button');
+  undo.className = 'toast-undo-btn';
+  undo.textContent = 'Undo';
+  el.append(ico, txt, undo);
   el.querySelector('.toast-undo-btn').addEventListener('click', (e) => {
     e.stopPropagation();
     el.classList.add('out');

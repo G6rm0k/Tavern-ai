@@ -553,8 +553,8 @@ const Discover = {
     const grid = document.getElementById('disc-grid');
     if (grid) grid.innerHTML = `<div class="disc-empty">
       <div style="font-size:40px">😕</div>
-      <h3>Ошибка</h3>
-      <p style="font-size:12px;word-break:break-all">${msg}</p>
+      <h3>${t('toast.error')}</h3>
+      <p style="font-size:12px;word-break:break-all">${this._html(msg)}</p>
       <button class="btn btn-ghost" onclick="Discover._doSearch()" style="margin-top:14px">Повторить</button>
     </div>`;
   },
