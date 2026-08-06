@@ -38,21 +38,18 @@ const ModelLoader = {
     return this.fallbacks[key] || [];
   },
 
-  // Fetch from provider's /models endpoint
+  // Fetch the provider's model list through our own server. Asking the provider
+  // straight from the browser was blocked by CORS almost everywhere — the button
+  // quietly fell back to a hardcoded list — and it sent the API key out of the
+  // page directly to a third party.
   async fetchModels(provider) {
     if (!provider?.baseUrl) return [];
     try {
-      const url = provider.baseUrl.replace(/\/$/, '') + '/models';
-      const headers = { 'Content-Type': 'application/json' };
-      if (provider.apiKey) headers['Authorization'] = `Bearer ${provider.apiKey}`;
-      const res = await fetch(url, { headers, signal: AbortSignal.timeout(6000) });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      let models = [];
-      if (Array.isArray(data))             models = data.map(m => m.id || m.name || m);
-      else if (Array.isArray(data.data))   models = data.data.map(m => m.id || m.name || m);
-      else if (Array.isArray(data.models)) models = data.models.map(m => m.name || m.id || m);
-      models = models.filter(m => typeof m === 'string' && m.length > 0);
+      const { models: raw } = await API.listModels({
+        baseUrl: provider.baseUrl,
+        apiKey:  provider.apiKey,
+      });
+      let models = (raw || []).filter(m => typeof m === 'string' && m.length > 0);
       models.sort((a, b) => {
         const ac = /chat|instruct|turbo|sonnet|gpt-4|claude|gemini/i.test(a);
         const bc = /chat|instruct|turbo|sonnet|gpt-4|claude|gemini/i.test(b);
@@ -114,7 +111,8 @@ const ModelLoader = {
       btn.disabled = true;
       btn.innerHTML = '<div class="loader-ring" style="width:14px;height:14px;border-width:2px"></div>';
       let models = await this.fetchModels(provider);
-      if (!models.length) models = fallback;
+      const live = models.length > 0;
+      if (!live) models = fallback;
       btn.disabled = false;
       btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>`;
       this._fillList(list, models, inp.value, (m) => {
@@ -123,7 +121,9 @@ const ModelLoader = {
         list.style.display = 'none';
       });
       list.style.display = 'block';
-      toast(`Загружено ${models.length} моделей`, 'success');
+      // Say plainly when the list could not be fetched, instead of passing off
+      // the hardcoded fallback as a live answer.
+      toast(live ? `${models.length} ✓` : `${models.length} (offline)`, live ? 'success' : 'info');
     });
 
     // Show fallback immediately if available
@@ -138,8 +138,8 @@ const ModelLoader = {
 
   _fillList(list, models, current, onClick) {
     list.innerHTML = models.map(m => `
-      <button class="ml-item ${m === current ? 'on' : ''}" data-m="${m.replace(/"/g,'&quot;')}">
-        ${m}
+      <button class="ml-item ${m === current ? 'on' : ''}" data-m="${escAttr(m)}">
+        ${esc(m)}
         ${m === current ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="14" height="14"><polyline points="20 6 9 17 4 12"/></svg>' : ''}
       </button>`).join('');
     list.querySelectorAll('.ml-item').forEach(b => {

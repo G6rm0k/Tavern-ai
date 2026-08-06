@@ -29,11 +29,20 @@ const Chat = {
   },
 
   async load(id) {
-    const chat = await API.getChat(id);
-    this.current = chat;
-    App.navigate('chat');
-    this.render();
-    App.setActiveChat(id);
+    try {
+      const chat = await API.getChat(id);
+      if (!chat || !chat.id) throw new Error(t('chat.gone'));
+      chat.messages = chat.messages || [];
+      this.current = chat;
+      App.navigate('chat');
+      this.render();
+      App.setActiveChat(id);
+    } catch (e) {
+      // Used to leave a blank screen when the chat was missing or the session
+      // had locked: render() would throw on a null current.
+      if (e.code !== 'NEED_UNLOCK') toastError(e);
+      App.navigate('home');
+    }
   },
 
   render() {
@@ -42,11 +51,11 @@ const Chat = {
     const mp = Settings.getMP();
     const prov = Settings.getActive();
     const av = c.characterAvatar
-      ? `<img src="${c.characterAvatar}" />`
-      : `<span>${c.characterAvatarEmoji||'✦'}</span>`;
+      ? `<img src="${escAttr(c.characterAvatar)}" />`
+      : `<span>${esc(c.characterAvatarEmoji||'✦')}</span>`;
 
     document.getElementById('view-chat').innerHTML = `
-      ${char?.avatar ? `<div class="chat-bg" style="background-image:url('${char.avatar}')"></div>` : ''}
+      ${char?.avatar ? `<div class="chat-bg" style="background-image:url('${escAttr(char.avatar)}')"></div>` : ''}
       <div class="chat-area">
         <div class="chat-hd">
           <button class="btn-icon" onclick="App.navigate('home')" style="color:var(--t2)">
@@ -56,8 +65,10 @@ const Chat = {
           </button>
           <div class="chat-hd-av">${av}</div>
           <div style="flex:1;min-width:0">
-            <div class="chat-hd-name">${c.characterName}</div>
-            <div class="chat-hd-sub">${prov ? `${prov.model} · temp ${mp.temperature}` : 'No provider'}</div>
+            <div class="chat-hd-name">${esc(c.characterName)}</div>
+            <div class="chat-hd-sub">${prov
+              ? `<span class="conn-dot ok"></span>${esc(prov.model || '—')}`
+              : `<span class="conn-dot bad"></span>${t('chat.no.provider.short')}`}</div>
           </div>
           <button class="btn-icon" onclick="Chat._menu()" style="color:var(--t2)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -78,6 +89,9 @@ const Chat = {
             <button class="send-btn" id="send-btn" onclick="Chat.send()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             </button>
+            <button class="send-btn stop-btn" id="stop-btn" onclick="Chat.stop()" title="${t('chat.stop')}" style="display:none">
+              <svg viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            </button>
           </div>
           <div style="display:flex;justify-content:flex-end;padding:2px 4px 0">
             <span class="token-count" id="tok-count">0 tokens</span>
@@ -97,10 +111,10 @@ const Chat = {
     const isUser = msg.role === 'user';
     const time = msg.ts ? new Date(msg.ts).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
     const av = isUser
-      ? `<div class="msg-av">${(App.user?.displayName||'U')[0].toUpperCase()}</div>`
-      : `<div class="msg-av">${this.current.characterAvatar ? `<img src="${this.current.characterAvatar}" />` : this.current.characterAvatarEmoji||'✦'}</div>`;
+      ? `<div class="msg-av">${esc((App.user?.displayName||'U')[0].toUpperCase())}</div>`
+      : `<div class="msg-av">${this.current.characterAvatar ? `<img src="${escAttr(this.current.characterAvatar)}" />` : esc(this.current.characterAvatarEmoji||'✦')}</div>`;
 
-    return `<div class="msg ${isUser?'user':'bot'}" data-id="${msg.id}">
+    return `<div class="msg ${isUser?'user':'bot'}" data-id="${escAttr(msg.id)}">
       ${av}
       <div class="msg-body">
         <div class="msg-bubble">${this._md(msg.content)}</div>
@@ -157,6 +171,7 @@ const Chat = {
         e.preventDefault(); this.send();
       }
     });
+    let draftTimer;
     inp.addEventListener('input', () => {
       inp.style.height = 'auto';
       inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
@@ -164,8 +179,11 @@ const Chat = {
       const words = inp.value.split(/\s+/).filter(Boolean).length;
       const tok = Math.round(words * 1.3);
       const el = document.getElementById('tok-count');
-      if (el) el.textContent = `~${tok} tokens`;
+      if (el) el.textContent = `~${tok} ${t('chat.tokens')}`;
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => this.saveDraft(), 400);
     });
+    this.restoreDraft();
     // Hide bottom nav in chat
     const nav = document.querySelector('.mob-nav');
     if (nav) nav.classList.add('nav-hidden');
@@ -208,6 +226,7 @@ const Chat = {
     if (!prov) { toast(t('chat.no.provider'), 'error'); return; }
 
     inp.value = ''; inp.style.height = 'auto';
+    this.clearDraft();
     Sounds.play('send');
 
     const userMsg = { role:'user', content:text, id:Date.now().toString(), ts:Date.now() };
@@ -222,15 +241,13 @@ const Chat = {
     const typing = document.createElement('div');
     typing.id = 'typing-el';
     typing.className = 'msg bot typing-msg';
-    typing.innerHTML = `<div class="msg-av">${this.current.characterAvatarEmoji||'✦'}</div>
+    typing.innerHTML = `<div class="msg-av">${esc(this.current.characterAvatarEmoji||'✦')}</div>
       <div class="msg-body"><div class="typing-bub"><div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div></div></div>`;
     container?.appendChild(typing);
     Anim.msgIn(typing);
     this._scrollBottom();
 
-    const sbtn = document.getElementById('send-btn');
-    if (sbtn) sbtn.disabled = true;
-    this.streaming = true;
+    this._setStreaming(true);
 
     const char = Characters.getById(this.current.characterId);
     const mp = Settings.getMP();
@@ -258,31 +275,79 @@ const Chat = {
         const tokEl = document.getElementById('tok-count');
         if (tokEl) tokEl.textContent = `~${Math.round(full.split(/\s+/).length * 1.3)} tokens`;
       },
-      async full => {
+      async (full, stopped) => {
         typing.remove();
         if (full) {
           const am = { role:'assistant', content:full, id:aid, ts:Date.now() };
+          if (stopped) am.stopped = true; // partial reply, kept on purpose
           this.current.messages.push(am);
-          await API.saveMessages(this.current.id, this.current.messages);
+          try { await API.saveMessages(this.current.id, this.current.messages); }
+          catch (e) { toastError(e); }
           App.renderChats();
           Sounds.play('msg');
+        } else if (stopped) {
+          // Stopped before a single token arrived — drop the user message back
+          // into the box so nothing is lost.
+          this.current.messages.pop();
+          if (inp) inp.value = text;
         }
         this._done();
       },
       err => {
         typing.remove();
-        toast(err, 'error');
+        toastError(err);
         this.current.messages.pop();
-        if (inp) inp.value = text;
+        // Give the text back instead of making the user retype it.
+        if (inp) { inp.value = text; this.saveDraft(); }
         this._done();
       }
     );
   },
 
-  _done() {
-    this.streaming = false;
-    const b = document.getElementById('send-btn');
-    if (b) b.disabled = false;
+  // Cancel an in-flight reply, keeping whatever already arrived.
+  stop() {
+    if (!this.streaming) return;
+    API.abortStream();
+  },
+
+  _setStreaming(on) {
+    this.streaming = on;
+    const send = document.getElementById('send-btn');
+    const stop = document.getElementById('stop-btn');
+    if (send) send.style.display = on ? 'none' : '';
+    if (stop) stop.style.display = on ? '' : 'none';
+  },
+
+  _done() { this._setStreaming(false); },
+
+  // ── DRAFTS ────────────────────────────────────────────────────────────────
+  // A half-typed message used to disappear on reload, auto-lock or a stray
+  // navigation. Keep it per chat until it is actually sent.
+  _draftKey() { return this.current ? `wesaid_draft_${this.current.id}` : null; },
+
+  saveDraft() {
+    const k = this._draftKey();
+    const v = document.getElementById('chat-input')?.value || '';
+    if (!k) return;
+    if (v.trim()) localStorage.setItem(k, v);
+    else localStorage.removeItem(k);
+  },
+
+  clearDraft() {
+    const k = this._draftKey();
+    if (k) localStorage.removeItem(k);
+  },
+
+  restoreDraft() {
+    const k = this._draftKey();
+    const inp = document.getElementById('chat-input');
+    if (!k || !inp) return;
+    const v = localStorage.getItem(k);
+    if (v) {
+      inp.value = v;
+      inp.style.height = 'auto';
+      inp.style.height = Math.min(inp.scrollHeight, 130) + 'px';
+    }
   },
 
   _appendMsg(msg) {
@@ -352,21 +417,28 @@ const Chat = {
 
   async regen(id) {
     if (this.streaming) return;
-    const idx = this.current.messages.findIndex(x=>x.id===id);
+    const msgs = this.current.messages;
+    const idx  = msgs.findIndex(x => x.id === id);
     if (idx < 0) return;
-    // Remove this message and all after it
-    this.current.messages = this.current.messages.slice(0, idx);
-    // Find and remove last user message (will be re-sent)
-    const lastUserIdx = [...this.current.messages].map((m,i)=>({m,i})).reverse().find(x=>x.m.role==='user');
-    if (!lastUserIdx) return;
-    const lastUserMsg = lastUserIdx.m;
-    this.current.messages.splice(lastUserIdx.i, 1);
-    await API.saveMessages(this.current.id, this.current.messages);
+
+    // Check for a user message to resend BEFORE touching anything. The old code
+    // truncated first and bailed out afterwards, so pressing ↻ on the character's
+    // opening line — where no user message exists yet — wiped the whole chat.
+    const kept = msgs.slice(0, idx);
+    const lastUser = [...kept].reverse().find(m => m.role === 'user');
+    if (!lastUser) {
+      toast(t('chat.regen.nothing'), 'error');
+      return;
+    }
+
+    this.current.messages = kept.filter(m => m !== lastUser);
+    try { await API.saveMessages(this.current.id, this.current.messages); }
+    catch (e) { toastError(e); return; }
     this.render();
-    // Re-send the last user message
+
     setTimeout(() => {
       const inp = document.getElementById('chat-input');
-      if (inp) { inp.value = lastUserMsg.content; this.send(); }
+      if (inp) { inp.value = lastUser.content; this.send(); }
     }, 80);
   },
 
@@ -426,7 +498,7 @@ const Chat = {
   _menu() {
     showModal(`
       <div class="modal-hd">
-        <div class="modal-title">${this.current.characterName}</div>
+        <div class="modal-title">${esc(this.current.characterName)}</div>
         <button class="btn-icon" onclick="closeModal()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -439,7 +511,7 @@ const Chat = {
           📤 Export .txt
         </button>
         <div class="divider"></div>
-        <div style="font-size:13px;color:var(--t3)">${this.current.messages.length} messages · ${this.current.characterName}</div>
+        <div style="font-size:13px;color:var(--t3)">${this.current.messages.length} · ${esc(this.current.characterName)}</div>
       </div>`);
   }
 };

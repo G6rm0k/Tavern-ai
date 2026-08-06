@@ -36,19 +36,21 @@ const Characters = {
 
   _cardHtml(c) {
     const avatarHtml = c.avatar
-      ? `<img src="${c.avatar}" alt="${c.name}" onerror="this.parentElement.textContent='✦'" />`
-      : `<span>${c.avatar_emoji || '✦'}</span>`;
+      ? `<img src="${escAttr(c.avatar)}" alt="${escAttr(c.name)}" onerror="this.parentElement.textContent='✦'" />`
+      : `<span>${esc(c.avatar_emoji || '✦')}</span>`;
     const isPublic = c.visibility === 'public';
-    const isOwner = c.ownerId === API.token;
+    // Was comparing the owner id against the JWT string, so it was always false:
+    // your own characters showed up as somebody else's, with no edit or delete.
+    const isOwner = c.ownerId === App.user?.id;
     return `
-      <div class="char-card" data-id="${c.id}">
+      <div class="char-card" data-id="${escAttr(c.id)}">
         <div class="char-card-avatar">${avatarHtml}</div>
         <div class="char-card-name">${escHtml(c.name)}</div>
         <div class="char-card-desc">${escHtml(c.description) || 'No description'}</div>
         ${isOwner ? `
           <div style="display:flex;gap:6px;margin-top:4px" onclick="event.stopPropagation()">
-            <button class="btn-icon" onclick="Characters.editChar('${c.id}')" style="font-size:12px">✏️</button>
-            <button class="btn-icon" onclick="Characters.deleteChar('${c.id}')" style="font-size:12px">🗑️</button>
+            <button class="btn-icon" onclick="Characters.editChar('${escJs(c.id)}')" style="font-size:12px">✏️</button>
+            <button class="btn-icon" onclick="Characters.deleteChar('${escJs(c.id)}')" style="font-size:12px">🗑️</button>
             <span class="badge ${isPublic ? 'badge-green' : 'badge-purple'}" style="font-size:10px;margin-left:auto">
               ${isPublic ? '🌍' : '🔒'}
             </span>
@@ -86,25 +88,25 @@ const Characters = {
 
           <div class="avatar-uploader">
             <div class="av-prev" id="avatar-preview" onclick="document.getElementById('avatar-file').click()">
-              ${c.avatar ? `<img src="${c.avatar}" id="avatar-img" />` : `<span id="avatar-emoji">${c.avatar_emoji || '✦'}</span>`}
+              ${c.avatar ? `<img src="${escAttr(c.avatar)}" id="avatar-img" />` : `<span id="avatar-emoji">${esc(c.avatar_emoji || '✦')}</span>`}
             </div>
             <div style="flex:1">
               <div style="display:flex;gap:8px;margin-bottom:8px">
                 <button class="btn btn-ghost" onclick="document.getElementById('avatar-file').click()" style="font-size:13px">Upload Image</button>
               </div>
               <div class="hint">PNG/JPG, also supports Chub.ai PNG cards</div>
-              <input id="avatar-emoji-input" type="text" placeholder="Or enter emoji ✦" value="${c.avatar_emoji || ''}" style="margin-top:8px" />
+              <input id="avatar-emoji-input" type="text" placeholder="Or enter emoji ✦" value="${escAttr(c.avatar_emoji || '')}" style="margin-top:8px" />
             </div>
             <input type="file" id="avatar-file" accept="image/*,.png" class="hidden" />
           </div>
 
           <div class="form-group">
             <label>Name *</label>
-            <input id="char-name" type="text" placeholder="Character name" value="${c.name || ''}" />
+            <input id="char-name" type="text" placeholder="Character name" value="${escAttr(c.name || '')}" />
           </div>
           <div class="form-group">
             <label>Short Description</label>
-            <input id="char-desc" type="text" placeholder="Brief description shown on card" value="${c.description || ''}" />
+            <input id="char-desc" type="text" placeholder="Brief description shown on card" value="${escAttr(c.description || '')}" />
           </div>
         </div>
 
@@ -121,7 +123,7 @@ const Characters = {
 
           <div class="form-group">
             <label>System Prompt (Character Definition)</label>
-            <textarea id="char-system" rows="7" placeholder="You are {{char}}, a... Describe personality, speaking style, background, traits. Use {{user}} for the user's name and {{char}} for the character name.">${c.systemPrompt || ''}</textarea>
+            <textarea id="char-system" rows="7" placeholder="You are {{char}}, a... Describe personality, speaking style, background, traits. Use {{user}} for the user's name and {{char}} for the character name.">${esc(c.systemPrompt || '')}</textarea>
             <div class="hint">This is the main instruction sent to the AI. Be as detailed as you want.</div>
           </div>
 
@@ -249,7 +251,7 @@ const Characters = {
   _greetingItem(msg, i) {
     return `
       <div class="greeting-item">
-        <textarea class="greeting-msg" rows="2" placeholder="Hello! I'm here to chat...">${msg}</textarea>
+        <textarea class="greeting-msg" rows="2" placeholder="Hello! I'm here to chat...">${esc(msg)}</textarea>
         <button class="btn-icon del-greeting" style="color:var(--danger);flex-shrink:0;margin-top:4px" title="Remove">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>

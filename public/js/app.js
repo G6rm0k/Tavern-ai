@@ -32,6 +32,9 @@ const App = {
     FX.init();
     Sounds.init();
 
+    // Any request may come back "locked" after the server was restarted.
+    API.onLocked = () => this.showUnlock();
+
     window.addEventListener('resize', () => {
       if (!this.isMobile && this._sbOpen) this.closeSidebar();
     }, { passive: true });
@@ -45,6 +48,12 @@ const App = {
       if (!ok) {
         Auth.render();
         this._showPage('auth');
+        return;
+      }
+      // Session survived a server restart but the encryption key did not.
+      if (this.user?.locked) {
+        this._showPage('main');
+        this.showUnlock();
         return;
       }
       await this.afterLogin();
@@ -65,7 +74,7 @@ const App = {
     }
     try {
       if (!Settings.data.providers?.length) {
-        Settings.renderSetup();
+        Wizard.render();
         this._showPage('setup');
       } else {
         await this.showMain();
@@ -125,8 +134,8 @@ const App = {
           <button class="prof-btn" onclick="App.showProfile()">
             <div class="prof-av" id="sb-av">${this._avHtml(this.user)}</div>
             <div style="flex:1;min-width:0">
-              <div class="prof-name">${this.user?.displayName || this.user?.username}</div>
-              <div class="prof-un">@${this.user?.username}</div>
+              <div class="prof-name">${esc(this.user?.displayName || this.user?.username)}</div>
+              <div class="prof-un">@${esc(this.user?.username)}</div>
             </div>
           </button>
         </div>
@@ -162,23 +171,24 @@ const App = {
   },
 
   _avHtml(u) {
-    if (u?.avatar) return `<img src="${u.avatar}" />`;
-    return (u?.displayName || u?.username || '?')[0].toUpperCase();
+    if (u?.avatar) return `<img src="${escAttr(u.avatar)}" />`;
+    return esc((u?.displayName || u?.username || '?')[0].toUpperCase());
   },
 
   _chatsHtml() {
-    if (!this.chats.length) return `<div style="padding:8px 12px;font-size:13px;color:var(--t4)">No chats yet</div>`;
+    if (!this.chats.length) return `<div style="padding:8px 12px;font-size:13px;color:var(--t4)">${t('chat.none')}</div>`;
     return this.chats.slice(0, 40).map(c => {
-      const last = c.messages[c.messages.length - 1];
+      const msgs = c.messages || [];
+      const last = msgs[msgs.length - 1];
       const prev = (last?.content || '').slice(0, 34) || '…';
       const av = c.characterAvatar
-        ? `<img src="${c.characterAvatar}" />`
-        : `<span>${c.characterAvatarEmoji || '✦'}</span>`;
-      return `<button class="chat-row" data-cid="${c.id}" onclick="Chat.load('${c.id}')">
+        ? `<img src="${escAttr(c.characterAvatar)}" />`
+        : `<span>${esc(c.characterAvatarEmoji || '✦')}</span>`;
+      return `<button class="chat-row" data-cid="${escAttr(c.id)}" onclick="Chat.load('${escJs(c.id)}')">
         <div class="chat-av">${av}</div>
         <div class="chat-info">
-          <div class="chat-name">${c.characterName}</div>
-          <div class="chat-prev">${prev}</div>
+          <div class="chat-name">${esc(c.characterName)}</div>
+          <div class="chat-prev">${esc(prev)}</div>
         </div>
         <button class="btn-icon chat-del" onclick="event.stopPropagation();App.delChat('${c.id}')" style="color:var(--red)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
@@ -193,6 +203,9 @@ const App = {
   },
 
   navigate(v, opts = {}) {
+    // The main page may not be built yet — Settings.load() fires a langChange
+    // during login, which used to call in here and throw on a null view.
+    if (!document.getElementById('view-home')) return;
     // Abort any in-flight stream when leaving chat
     if (this.view === 'chat' && v !== 'chat') API.abortStream();
     this.view = v;
@@ -214,22 +227,23 @@ const App = {
       const recentChats = this.chats.slice(0, 5);
       const recentHtml = recentChats.length ? recentChats.map(c => {
         const av = c.characterAvatar
-          ? `<img src="${c.characterAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
-          : `<span style="font-size:22px">${c.characterAvatarEmoji||'✦'}</span>`;
-        const last = c.messages[c.messages.length-1];
+          ? `<img src="${escAttr(c.characterAvatar)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%" />`
+          : `<span style="font-size:22px">${esc(c.characterAvatarEmoji||'✦')}</span>`;
+        const msgs = c.messages || [];
+        const last = msgs[msgs.length-1];
         const prev = (last?.content||'').slice(0,30)||'…';
-        return `<button class="home-recent-item" onclick="Chat.load('${c.id}')">
+        return `<button class="home-recent-item" onclick="Chat.load('${escJs(c.id)}')">
           <div class="home-recent-av">${av}</div>
           <div class="home-recent-info">
-            <div class="home-recent-name">${c.characterName}</div>
-            <div class="home-recent-prev">${prev}</div>
+            <div class="home-recent-name">${esc(c.characterName)}</div>
+            <div class="home-recent-prev">${esc(prev)}</div>
           </div>
         </button>`;
-      }).join('') : `<div style="color:var(--t4);font-size:13px;padding:4px 0">Нет чатов</div>`;
+      }).join('') : `<div style="color:var(--t4);font-size:13px;padding:4px 0">${t('chat.none')}</div>`;
       el.innerHTML = `
         <div class="view-hd">
           <div>
-            <h2>${t('home.welcome')}, ${this.user?.displayName || this.user?.username} 👋</h2>
+            <h2>${t('home.welcome')}, ${esc(this.user?.displayName || this.user?.username)} 👋</h2>
             <p>${t('home.subtitle')}</p>
           </div>
           <button class="btn btn-primary" onclick="App.navigate('create')" style="flex-shrink:0">+ ${t('home.new')}</button>
@@ -237,15 +251,15 @@ const App = {
         <div class="home-stats">
           <div class="home-stat-card">
             <div class="home-stat-n">${Characters.list.length}</div>
-            <div class="home-stat-l">персонажей</div>
+            <div class="home-stat-l">${t('stat.characters')}</div>
           </div>
           <div class="home-stat-card">
             <div class="home-stat-n">${this.chats.length}</div>
-            <div class="home-stat-l">чатов</div>
+            <div class="home-stat-l">${t('stat.chats')}</div>
           </div>
           <div class="home-stat-card">
-            <div class="home-stat-n">${this.chats.reduce((s,c)=>s+c.messages.length,0)}</div>
-            <div class="home-stat-l">сообщений</div>
+            <div class="home-stat-n">${this.chats.reduce((s,c)=>s+(c.messages?.length||0),0)}</div>
+            <div class="home-stat-l">${t('stat.messages')}</div>
           </div>
         </div>
         ${recentChats.length ? `
@@ -254,7 +268,7 @@ const App = {
           <div class="home-recent-list">${recentHtml}</div>
         </div>` : ''}
         <div class="home-section">
-          <div class="home-section-title">Мои персонажи</div>
+          <div class="home-section-title">${t('home.mine')}</div>
           <div class="char-list" id="home-list"></div>
         </div>`;
       Characters.renderList(document.getElementById('home-list'), Characters.list);
@@ -347,12 +361,13 @@ const App = {
         <input type="file" id="p-av-f" accept="image/*" class="hidden" />
         <input type="file" id="p-banner-f" accept="image/*" class="hidden" />
         <div class="form-row" style="margin-top:18px">
-          <div class="form-group"><label>${t('profile.displayName')}</label><input id="p-dn" value="${u.displayName||''}" /></div>
-          <div class="form-group"><label>${t('profile.username')}</label><input id="p-un" value="${u.username||''}" /></div>
+          <div class="form-group"><label>${t('profile.displayName')}</label><input id="p-dn" value="${escAttr(u.displayName||'')}" /></div>
+          <div class="form-group"><label>${t('profile.username')}</label><input id="p-un" value="${escAttr(u.username||'')}" /></div>
         </div>
-        <div class="form-group"><label>${t('profile.bio')}</label><textarea id="p-bio" rows="2">${u.bio||''}</textarea></div>
-        <div class="form-group"><label>${t('profile.password')}</label><input id="p-pw" type="password" placeholder="Leave blank to keep" /></div>
-        <button class="btn btn-danger" onclick="App.logout()" style="width:100%;justify-content:center">🚪 ${t('profile.logout')}</button>
+        <div class="form-group"><label>${t('profile.bio')}</label><textarea id="p-bio" rows="2">${esc(u.bio||'')}</textarea></div>
+        <div class="divider"></div>
+        <button class="btn btn-ghost" onclick="App.showPasswordChange()" style="width:100%;justify-content:center">🔑 ${t('profile.changePassword')}</button>
+        <button class="btn btn-danger" onclick="App.logout()" style="width:100%;justify-content:center;margin-top:10px">🚪 ${t('profile.logout')}</button>
       </div>
       <div class="modal-ft">
         <button class="btn btn-ghost" onclick="closeModal()">${t('char.cancel')}</button>
@@ -384,8 +399,6 @@ const App = {
     };
     if (App._newAv)     d.avatar = App._newAv;
     if (App._newBanner) d.banner = App._newBanner;
-    const pw = document.getElementById('p-pw').value;
-    if (pw) d.password = pw;
     try {
       this.user = await API.updateProfile(d);
       App._newAv = App._newBanner = null;
@@ -393,6 +406,100 @@ const App = {
       if (av) av.innerHTML = this._avHtml(this.user);
       closeModal(); toast(t('toast.saved'), 'success');
     } catch (e) { toast(e.message, 'error'); }
+  },
+
+  // Changing the password re-derives the encryption key, so the server has to
+  // re-encrypt everything. It used to be a field in the profile form that was
+  // silently discarded — the UI said "Saved!" and nothing had happened.
+  showPasswordChange() {
+    showModal(`
+      <div class="modal-hd">
+        <div class="modal-title">${t('profile.changePassword')}</div>
+        <button class="btn-icon" onclick="closeModal()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="notice notice-warn">${t('profile.pwNotice')}</div>
+        <div class="form-group"><label>${t('profile.pwCurrent')}</label><input id="pw-cur" type="password" autocomplete="current-password" /></div>
+        <div class="form-group"><label>${t('profile.pwNew')}</label><input id="pw-new" type="password" autocomplete="new-password" /></div>
+        <div class="form-group"><label>${t('profile.pwRepeat')}</label><input id="pw-rep" type="password" autocomplete="new-password" /></div>
+        <div id="pw-err" style="color:var(--red);font-size:13px;display:none"></div>
+      </div>
+      <div class="modal-ft">
+        <button class="btn btn-ghost" onclick="closeModal()">${t('char.cancel')}</button>
+        <button class="btn btn-primary" id="pw-save" onclick="App.savePassword()">${t('profile.save')}</button>
+      </div>`);
+  },
+
+  async savePassword() {
+    const cur = document.getElementById('pw-cur').value;
+    const nw  = document.getElementById('pw-new').value;
+    const rep = document.getElementById('pw-rep').value;
+    const err = document.getElementById('pw-err');
+    const show = m => { err.textContent = m; err.style.display = 'block'; };
+
+    if (!cur || !nw)   return show(t('profile.pwFill'));
+    if (nw !== rep)    return show(t('profile.pwMismatch'));
+    if (nw.length < 4) return show(t('profile.pwShort'));
+
+    const btn = document.getElementById('pw-save');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      await API.changePassword(cur, nw);
+      closeModal();
+      toast(t('profile.pwChanged'), 'success');
+    } catch (e) {
+      show(e.message);
+      btn.disabled = false; btn.textContent = t('profile.save');
+    }
+  },
+
+  // ── SESSION UNLOCK ─────────────────────────────────────────────────────────
+  // The server keeps the encryption key in memory only, so restarting it leaves
+  // a valid session that cannot read anything. Ask for the password instead of
+  // logging out and losing the token.
+  _unlockOpen: false,
+
+  showUnlock() {
+    if (this._unlockOpen) return;
+    this._unlockOpen = true;
+    showModal(`
+      <div class="modal-hd"><div class="modal-title">🔒 ${t('unlock.title')}</div></div>
+      <div class="modal-body">
+        <p style="color:var(--t3);font-size:14px;line-height:1.5;margin-bottom:14px">${t('unlock.desc')}</p>
+        <div class="form-group">
+          <label>${t('auth.password')}</label>
+          <input id="unlock-pw" type="password" autocomplete="current-password" autofocus />
+        </div>
+        <div id="unlock-err" style="color:var(--red);font-size:13px;display:none"></div>
+      </div>
+      <div class="modal-ft">
+        <button class="btn btn-ghost" onclick="App.logout()">${t('profile.logout')}</button>
+        <button class="btn btn-primary" id="unlock-btn" onclick="App.doUnlock()">${t('unlock.btn')}</button>
+      </div>`);
+    const inp = document.getElementById('unlock-pw');
+    inp?.focus();
+    inp?.addEventListener('keydown', e => { if (e.key === 'Enter') App.doUnlock(); });
+  },
+
+  async doUnlock() {
+    const pw  = document.getElementById('unlock-pw')?.value || '';
+    const err = document.getElementById('unlock-err');
+    const btn = document.getElementById('unlock-btn');
+    btn.disabled = true; btn.textContent = '…';
+    try {
+      const { user } = await API.unlock(pw);
+      this.user = user;
+      this._unlockOpen = false;
+      closeModal();
+      await this.showMain();
+      toast(t('unlock.ok'), 'success');
+    } catch (e) {
+      err.textContent = e.message;
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = t('unlock.btn');
+    }
   },
 
   logout() { API.logout().catch(()=>{}); API.setToken(null); location.reload(); },
@@ -403,27 +510,27 @@ const App = {
 
     el.innerHTML = `
       <div class="acc-wrap">
-        <div class="acc-banner" style="${u.banner?`background-image:url('${u.banner}')`:''}">
+        <div class="acc-banner" style="${u.banner?`background-image:url('${escAttr(u.banner)}')`:''}">
           ${!u.banner ? '<div class="acc-banner-grad"></div>' : ''}
         </div>
         <div class="acc-av-row">
-          <div class="acc-av">${u.avatar ? `<img src="${u.avatar}" />` : `<span>${(u.displayName||u.username||'?')[0].toUpperCase()}</span>`}</div>
-          <button class="btn btn-ghost" onclick="App.showProfile()" style="margin-left:auto">Редактировать</button>
+          <div class="acc-av">${u.avatar ? `<img src="${escAttr(u.avatar)}" />` : `<span>${esc((u.displayName||u.username||'?')[0].toUpperCase())}</span>`}</div>
+          <button class="btn btn-ghost" onclick="App.showProfile()" style="margin-left:auto">${t('profile.edit')}</button>
         </div>
         <div class="acc-info">
-          <div class="acc-name">${u.displayName||u.username}</div>
-          <div class="acc-un">@${u.username}</div>
-          ${u.bio ? `<div class="acc-bio">${u.bio}</div>` : ''}
+          <div class="acc-name">${esc(u.displayName||u.username)}</div>
+          <div class="acc-un">@${esc(u.username)}</div>
+          ${u.bio ? `<div class="acc-bio">${esc(u.bio)}</div>` : ''}
         </div>
         <div class="acc-stats-row">
-          <div class="acc-stat"><div class="acc-stat-n">${Characters.list.length}</div><div class="acc-stat-l">персонажей</div></div>
-          <div class="acc-stat"><div class="acc-stat-n">${this.chats.length}</div><div class="acc-stat-l">чатов</div></div>
+          <div class="acc-stat"><div class="acc-stat-n">${Characters.list.length}</div><div class="acc-stat-l">${t('stat.characters')}</div></div>
+          <div class="acc-stat"><div class="acc-stat-n">${this.chats.length}</div><div class="acc-stat-l">${t('stat.chats')}</div></div>
         </div>
         ${isAdmin ? `
         <div class="acc-section">
-          <div class="acc-section-title" style="color:var(--red)">⚡ Админ-панель</div>
+          <div class="acc-section-title" style="color:var(--red)">⚡ ${t('admin.title')}</div>
           <div class="acc-admin-wrap">
-            <button class="btn btn-danger acc-admin-btn" onclick="App._adminRestart()">🔄 Рестарт сервера</button>
+            <button class="btn btn-danger acc-admin-btn" onclick="App._adminRestart()">🔄 ${t('admin.restart')}</button>
           </div>
         </div>` : ''}
       </div>`;
@@ -469,23 +576,36 @@ const App = {
 };
 
 // ── AUTO-LOCK ──────────────────────────────────────────────────────────────────
-// Logs out after 30 minutes of inactivity — protects against physical access
-// while the device is unattended (RAT or stolen phone scenario).
-(function initAutoLock() {
-  let _timer = null;
-  const reset = () => {
-    clearTimeout(_timer);
-    const minutes = (typeof Settings !== 'undefined' && Settings.data?.app?.autoLockMin) || 30;
-    _timer = setTimeout(() => {
-      if (typeof App !== 'undefined' && App.user) {
-        App.logout();
-      }
-    }, minutes * 60 * 1000);
-  };
-  ['click', 'touchstart', 'keydown', 'mousemove', 'scroll'].forEach(ev =>
-    document.addEventListener(ev, reset, { passive: true }));
-  reset();
-})();
+// Was hardcoded to log out after 30 minutes of inactivity, with no way to turn it
+// off and no warning: the page simply reloaded and any half-typed message was
+// gone. Now it is off by default (this is a local app on your own machine) and
+// configurable in Settings, with a warning before it fires.
+const AutoLock = {
+  _timer: null,
+  _warnTimer: null,
+
+  reset() {
+    clearTimeout(this._timer);
+    clearTimeout(this._warnTimer);
+    const minutes = (typeof Settings !== 'undefined' && Settings.data?.app?.autoLockMin) || 0;
+    if (!minutes) return; // 0 = disabled
+    const ms = minutes * 60 * 1000;
+    if (ms > 60000) {
+      this._warnTimer = setTimeout(() => {
+        if (App?.user) toast(t('lock.warn'), 'info');
+      }, ms - 60000);
+    }
+    this._timer = setTimeout(() => {
+      if (App?.user) { Chat.saveDraft?.(); App.logout(); }
+    }, ms);
+  },
+
+  init() {
+    ['click', 'touchstart', 'keydown', 'mousemove', 'scroll'].forEach(ev =>
+      document.addEventListener(ev, () => this.reset(), { passive: true }));
+    this.reset();
+  },
+};
 
 // ── SVG ICONS ──────────────────────────────────────────────────────────────────
 const icons = {
@@ -515,10 +635,38 @@ function toast(msg, type = 'info') {
   const icons = { success:'✅', error:'❌', info:'ℹ️' };
   const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = `<span>${icons[type]||''}</span><span style="flex:1">${msg}</span>`;
+  // Built from nodes, not innerHTML: this shows provider error text and
+  // character names, which are not ours to trust.
+  const ico = document.createElement('span');
+  ico.textContent = icons[type] || '';
+  const txt = document.createElement('span');
+  txt.style.flex = '1';
+  txt.textContent = msg;
+  el.append(ico, txt);
   el.onclick = () => { el.classList.add('out'); setTimeout(()=>el.remove(), 200); };
   document.getElementById('toast-wrap').appendChild(el);
   setTimeout(() => { if (el.parentNode) { el.classList.add('out'); setTimeout(()=>el.remove(),200); } }, 3500);
+  return el;
+}
+
+// An error the user can actually do something about gets a button.
+function toastAction(msg, label, onClick) {
+  const el = document.createElement('div');
+  el.className = 'toast error';
+  const ico = document.createElement('span'); ico.textContent = '❌';
+  const txt = document.createElement('span'); txt.style.flex = '1'; txt.textContent = msg;
+  const btn = document.createElement('button');
+  btn.className = 'toast-undo-btn';
+  btn.textContent = label;
+  btn.addEventListener('click', e => {
+    e.stopPropagation();
+    el.classList.add('out'); setTimeout(() => el.remove(), 200);
+    onClick();
+  });
+  el.append(ico, txt, btn);
+  el.onclick = () => { el.classList.add('out'); setTimeout(() => el.remove(), 200); };
+  document.getElementById('toast-wrap').appendChild(el);
+  setTimeout(() => { if (el.parentNode) { el.classList.add('out'); setTimeout(() => el.remove(), 200); } }, 7000);
 }
 
 function toastUndo(msg, onUndo) {
@@ -537,4 +685,7 @@ function toastUndo(msg, onUndo) {
 }
 
 // ── BOOT ───────────────────────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => App.init());
+document.addEventListener('DOMContentLoaded', () => {
+  App.init();
+  AutoLock.init();
+});
