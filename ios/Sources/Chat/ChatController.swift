@@ -21,6 +21,10 @@ final class ChatController: ObservableObject {
     @Published private(set) var isStreaming = false
     @Published var draftInputText = ""
     @Published var lastError: Error?
+    /// Per-chat override of the global default, toggled from the brain icon
+    /// next to the input bar. Transient (not persisted to `ChatSession`) —
+    /// reopening a chat picks the current global default back up.
+    @Published var forceThinking: Bool
     /// Set when regenerating a reply that has messages after it — confirming
     /// abandons that branch of the conversation. `nil` once resolved either way.
     @Published var pendingRegenerateTruncation: String?
@@ -41,6 +45,7 @@ final class ChatController: ObservableObject {
         self.characterStore = characterStore
         self.settingsStore = settingsStore
         self.completionService = completionService
+        self.forceThinking = settingsStore.settings.preferences.forceThinkingByDefault
     }
 
     private var character: CharacterCard? {
@@ -152,7 +157,8 @@ final class ChatController: ObservableObject {
             globalSystem: mp.globalSystem,
             persona: settingsStore.settings.persona,
             memorySummary: chat.summary,
-            recentContext: context
+            recentContext: context,
+            forceThinking: forceThinking
         )
         let request = ChatCompletionRequest(
             messages: context, model: provider.model, systemPrompt: systemPrompt,

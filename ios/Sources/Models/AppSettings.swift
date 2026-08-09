@@ -122,17 +122,27 @@ struct AppPreferences: Codable, Hashable {
     /// `STARTER_CHARACTERS`-style defaults ever turns this on for the user.
     var memoryEnabled: Bool
 
-    init(memoryEnabled: Bool = false) {
+    /// iOS-only, not in the web version: asks the model to reason through a
+    /// problem step by step before its final answer, via a system-prompt
+    /// instruction rather than any provider-specific "reasoning" API — so it
+    /// has the same effect regardless of which provider or model is active.
+    /// This is the default for new chats; each chat can still override it.
+    var forceThinkingByDefault: Bool
+
+    init(memoryEnabled: Bool = false, forceThinkingByDefault: Bool = false) {
         self.memoryEnabled = memoryEnabled
+        self.forceThinkingByDefault = forceThinkingByDefault
     }
 
     enum CodingKeys: String, CodingKey {
         case memoryEnabled = "memory"
+        case forceThinkingByDefault = "forceThinking"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         memoryEnabled = (try? c.decode(Bool.self, forKey: .memoryEnabled)) ?? false
+        forceThinkingByDefault = (try? c.decode(Bool.self, forKey: .forceThinkingByDefault)) ?? false
     }
 }
 

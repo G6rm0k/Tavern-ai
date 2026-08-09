@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension Color {
     /// `#RRGGBB` or `#RRGGBBAA`.
@@ -13,28 +14,29 @@ extension Color {
     }
 }
 
-/// Same palette as `public/css/main.css`'s `:root` tokens — wesaid is a
-/// dark-first app by design (`app: { theme: 'dark', ... }` is the default in
-/// `settings.js`, with light mode as an opt-in the user has to switch to),
-/// so this is the app's actual identity, not just "whatever the system
-/// prefers." An appearance toggle is a later phase; there is no settings
-/// screen yet to hang one off of.
+/// Backgrounds, surfaces and text are the system's own semantic colors —
+/// `.systemBackground`, `.label`, and friends — so the app is black/white
+/// and automatically correct in light mode, dark mode, and accessibility
+/// contrast settings, rather than a hand-picked palette that only really
+/// works in one of those. `accent` is the one spot of color, reserved for
+/// interactive elements (buttons, toggles, the active tab) — never for
+/// backgrounds or body text — matching the web version's own orange
+/// (`hsl(28, 90%, 58%)` / `#f97316`, the `accentColor` fallback in
+/// `settings.js`).
 enum WesaidTheme {
-    static let background  = Color(hex: 0x06060b)   // --bg
-    static let background2 = Color(hex: 0x0b0b14)   // --bg2
-    static let surface     = Color(hex: 0x14142a)   // --surf
-    static let surface2    = Color(hex: 0x1a1a36)   // --surf2
+    static let background  = Color(uiColor: .systemBackground)
+    static let background2 = Color(uiColor: .secondarySystemBackground)
+    static let surface     = Color(uiColor: .secondarySystemBackground)
+    static let surface2    = Color(uiColor: .tertiarySystemBackground)
 
-    /// `hsl(28, 90%, 58%)`, the CSS default accent — orange, matching the
-    /// `#f97316` fallback `settings.js` itself uses for `accentColor`.
     static let accent = Color(hex: 0xf97316)
     static let accentGlow = Color(hex: 0xf97316, alpha: 0.30)
 
-    static let text1 = Color(hex: 0xfff5eb)   // --t1, primary
-    static let text2 = Color(hex: 0xc8b8a4)   // --t2, secondary
-    static let text3 = Color(hex: 0x7a6e5e)   // --t3, tertiary/hints
+    static let text1 = Color(uiColor: .label)
+    static let text2 = Color(uiColor: .secondaryLabel)
+    static let text3 = Color(uiColor: .tertiaryLabel)
 
-    // --r-* corner radii.
+    // --r-* corner radii from main.css.
     static let radiusXS: CGFloat = 8
     static let radiusSM: CGFloat = 12
     static let radius: CGFloat = 18

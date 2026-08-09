@@ -11,13 +11,9 @@ struct wesaidApp: App {
                 .environmentObject(stores.characters)
                 .environmentObject(stores.chats)
                 .environmentObject(stores.settings)
-                // wesaid defaults to a dark theme, not "whatever the system
-                // prefers" (`app: { theme: 'dark', ... }` in the web version's
-                // settings.js — light is an opt-in the user switches to). Forcing
-                // it here keeps system-drawn chrome (alerts, keyboard, nav bar)
-                // from clashing with the app's own dark backgrounds until a
-                // settings screen exists to make this a real toggle.
-                .preferredColorScheme(.dark)
+                // Follows the system appearance — colors come from
+                // WesaidTheme's semantic tokens (.systemBackground, .label,
+                // …), which are correct in both light and dark automatically.
                 .tint(WesaidTheme.accent)
         }
         // iOS can suspend or terminate the app with no notice once it leaves

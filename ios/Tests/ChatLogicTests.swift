@@ -126,6 +126,22 @@ final class ChatLogicTests: XCTestCase {
         XCTAssertEqual(result, "")
     }
 
+    func testForceThinkingIsOffByDefault() {
+        let result = PromptAssembler.buildSystemPrompt(
+            character: nil, characterName: "Рэйк", globalSystem: "Будь краток.", persona: Persona(),
+            memorySummary: "", recentContext: []
+        )
+        XCTAssertEqual(result, "Будь краток.")
+    }
+
+    func testForceThinkingPrependsInstructionBeforeEverythingElse() {
+        let result = PromptAssembler.buildSystemPrompt(
+            character: nil, characterName: "Рэйк", globalSystem: "Будь краток.", persona: Persona(),
+            memorySummary: "", recentContext: [], forceThinking: true
+        )
+        XCTAssertEqual(result, [PromptAssembler.thinkingInstruction, "Будь краток."].joined(separator: "\n\n"))
+    }
+
     // MARK: - ContextWindow
 
     func testContextWindowKeepsOnlyLastLimitMessages() {

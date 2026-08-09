@@ -56,7 +56,7 @@ final class ModelCodingTests: XCTestCase {
             modelParams: ModelParams(temperature: 1.1, maxTokens: 700, topP: 0.8, topK: 33, contextMessages: 25, globalSystem: "Отвечай кратко"),
             persona: Persona(name: "Гера", description: "Любит море"),
             requireBiometrics: true,
-            preferences: AppPreferences(memoryEnabled: true)
+            preferences: AppPreferences(memoryEnabled: true, forceThinkingByDefault: true)
         )
         XCTAssertEqual(try roundTrip(settings), settings)
     }
@@ -103,6 +103,7 @@ final class ModelCodingTests: XCTestCase {
         XCTAssertEqual(settings.modelParams, ModelParams())
         XCTAssertFalse(settings.requireBiometrics, "biometrics must be opt-in")
         XCTAssertFalse(settings.preferences.memoryEnabled, "memory summarisation must be opt-in")
+        XCTAssertFalse(settings.preferences.forceThinkingByDefault, "forced thinking must be opt-in")
     }
 
     /// Cards exported by other clients carry roles we do not know. Dropping the

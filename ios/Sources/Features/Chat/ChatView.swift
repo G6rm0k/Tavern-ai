@@ -86,6 +86,8 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 10) {
+            thinkingToggle
+
             TextField("Сообщение…", text: $controller.draftInputText, axis: .vertical)
                 .lineLimit(1...5)
                 .padding(.horizontal, 14)
@@ -121,6 +123,23 @@ struct ChatView: View {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(WesaidTheme.background2)
+    }
+
+    /// Forces the model to reason step by step before its final answer, for
+    /// this chat only — works the same regardless of provider/model, since
+    /// it's a system-prompt instruction, not a provider-specific API.
+    private var thinkingToggle: some View {
+        Button {
+            controller.forceThinking.toggle()
+        } label: {
+            Image(systemName: "brain")
+                .font(.system(size: 16, weight: .semibold))
+                .padding(10)
+                .background(controller.forceThinking ? WesaidTheme.accent : WesaidTheme.surface,
+                            in: Circle())
+                .foregroundStyle(controller.forceThinking ? .white : WesaidTheme.text3)
+        }
+        .accessibilityLabel("Размышлять перед ответом")
     }
 }
 
