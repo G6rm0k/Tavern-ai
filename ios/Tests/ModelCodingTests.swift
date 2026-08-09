@@ -63,10 +63,14 @@ final class ModelCodingTests: XCTestCase {
 
     /// The web version stores this under `settings.app.memory` — a nested
     /// object, not a top-level key. Getting the `CodingKeys` wrong here would
-    /// silently decode `preferences` to its default on every load.
+    /// silently decode `preferences` to its default on every load. Checks
+    /// nesting and presence rather than an exact substring of the whole
+    /// object, so adding another field to `AppPreferences` later — as
+    /// already happened once — doesn't break this on a technicality.
     func testAppSettingsPreferencesUsesNestedAppKeyOnDisk() throws {
         let json = String(decoding: try StoreCoding.encoder.encode(AppSettings(preferences: AppPreferences(memoryEnabled: true))), as: UTF8.self)
-        XCTAssertTrue(json.contains(#""app":{"memory":true}"#), json)
+        XCTAssertTrue(json.contains(#""app":{"#), "preferences must nest under a top-level \"app\" key: \(json)")
+        XCTAssertTrue(json.contains(#""memory":true"#), json)
     }
 
     // MARK: - Tolerating older / foreign files

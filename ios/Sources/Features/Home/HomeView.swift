@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// A minimal starting point for what becomes the full character list in a
-/// later phase (create/edit/delete, PNG import, Discover). For now it exists
-/// so Chat — this phase's actual deliverable — has somewhere to be reached
-/// from on a sideloaded build: tap a starter character, land in a chat.
 struct HomeView: View {
     @EnvironmentObject private var characters: CharacterStore
     @EnvironmentObject private var chats: ChatStore
     @EnvironmentObject private var settings: SettingsStore
+
+    @State private var showingNewCharacter = false
+    @State private var editingCharacter: CharacterCard?
 
     var body: some View {
         List(characters.characters) { character in
@@ -17,6 +16,15 @@ struct HomeView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+            .swipeActions {
+                Button("Удалить", role: .destructive) {
+                    characters.delete(id: character.id)
+                }
+                Button("Изменить") {
+                    editingCharacter = character
+                }
+                .tint(WesaidTheme.accent)
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -29,6 +37,13 @@ struct HomeView: View {
                     .font(.wesaidRounded(20))
                     .foregroundStyle(WesaidTheme.text1)
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingNewCharacter = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
         }
         // `.navigationDestination(for:)` builds its view only when a value is
         // actually pushed onto the path — unlike `NavigationLink(destination:
@@ -38,6 +53,12 @@ struct HomeView: View {
         // chat session); the eager form risked spawning duplicate chats.
         .navigationDestination(for: CharacterCard.self) { character in
             ChatView(controller: makeController(for: character))
+        }
+        .sheet(isPresented: $showingNewCharacter) {
+            CharacterEditorView()
+        }
+        .sheet(item: $editingCharacter) { character in
+            CharacterEditorView(editing: character)
         }
     }
 
