@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// action (edit existing).
 struct CharacterEditorView: View {
     @EnvironmentObject private var characters: CharacterStore
+    @EnvironmentObject private var settings: SettingsStore
     @Environment(\.dismiss) private var dismiss
 
     private let editingID: String?
@@ -23,6 +24,7 @@ struct CharacterEditorView: View {
     @State private var pendingAvatarData: Data?
     @State private var showingImporter = false
     @State private var importErrorMessage: String?
+    @State private var showingWizard = false
 
     /// A lorebook row's *raw typed text* for keys, kept separate from the
     /// `[String]` array it becomes on save. Deriving the array live on every
@@ -84,6 +86,9 @@ struct CharacterEditorView: View {
             } message: {
                 Text(importErrorMessage ?? "")
             }
+            .sheet(isPresented: $showingWizard) {
+                CharacterWizardView(controller: makeWizardController())
+            }
         }
         .tint(WesaidTheme.accent)
     }
@@ -92,6 +97,11 @@ struct CharacterEditorView: View {
 
     private var importSection: some View {
         Section {
+            Button {
+                showingWizard = true
+            } label: {
+                Label("Создать с ИИ", systemImage: "sparkles")
+            }
             Button {
                 showingImporter = true
             } label: {
@@ -103,7 +113,7 @@ struct CharacterEditorView: View {
                     .foregroundStyle(WesaidTheme.text3)
             }
         } footer: {
-            Text("Карточки Tavern/Chub.ai и похожие в формате PNG — импорт заполнит поля ниже, останется проверить и сохранить.")
+            Text("Карточки Tavern/Chub.ai и похожие в формате PNG — импорт заполнит поля ниже, останется проверить и сохранить. ИИ-помощник придумает персонажа вместе с тобой через диалог.")
         }
         .listRowBackground(WesaidTheme.surface)
     }
@@ -198,6 +208,28 @@ struct CharacterEditorView: View {
             pendingAvatarData = data
         } catch {
             importErrorMessage = describeImportFailure(error)
+        }
+    }
+
+    // MARK: - AI wizard
+
+    /// Same fill rule as `_applyField` in `charwizard.js`: the single empty
+    /// greeting slot every new character starts with gets filled in place;
+    /// once it's no longer empty (or there's more than one), a proposed
+    /// greeting is appended as a new one instead of overwriting anything.
+    private func makeWizardController() -> CharacterWizardController {
+        CharacterWizardController(settingsStore: settings) { field, value in
+            switch field {
+            case .name: name = value
+            case .description: description = value
+            case .systemPrompt: systemPrompt = value
+            case .firstMessage:
+                if firstMessages.isEmpty || (firstMessages.count == 1 && firstMessages[0].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    firstMessages = [value]
+                } else {
+                    firstMessages.append(value)
+                }
+            }
         }
     }
 
