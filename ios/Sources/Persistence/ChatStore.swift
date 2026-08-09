@@ -68,6 +68,17 @@ final class ChatStore: ObservableObject {
         store.saveSoon(chats)
     }
 
+    /// Adds a chat from a backup file only if nothing with the same id is
+    /// already here, mirroring `CharacterStore.restore(_:)`.
+    @discardableResult
+    func restore(_ session: ChatSession) -> Bool {
+        guard !chats.contains(where: { $0.id == session.id }) else { return false }
+        chats.append(session)
+        chats = ChatStore.sorted(chats)
+        store.saveSoon(chats)
+        return true
+    }
+
     func deleteAll() {
         chats = []
         store.saveSoon(chats)

@@ -7,14 +7,16 @@ struct wesaidApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootTabView()
-                .environmentObject(stores.characters)
-                .environmentObject(stores.chats)
-                .environmentObject(stores.settings)
-                // Follows the system appearance — colors come from
-                // WesaidTheme's semantic tokens (.systemBackground, .label,
-                // …), which are correct in both light and dark automatically.
-                .tint(WesaidTheme.accent)
+            LockGateView(settingsStore: stores.settings) {
+                RootTabView()
+                    .environmentObject(stores.characters)
+                    .environmentObject(stores.chats)
+                    .environmentObject(stores.settings)
+            }
+            // Follows the system appearance — colors come from
+            // WesaidTheme's semantic tokens (.systemBackground, .label,
+            // …), which are correct in both light and dark automatically.
+            .tint(WesaidTheme.accent)
         }
         // iOS can suspend or terminate the app with no notice once it leaves
         // the foreground — unlike the desktop version, there is no SIGTERM to

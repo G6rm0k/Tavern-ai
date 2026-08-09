@@ -45,6 +45,17 @@ final class CharacterStore: ObservableObject {
         store.saveSoon(characters)
     }
 
+    /// Adds a character from a backup file only if nothing with the same id
+    /// is already here — a restore must never silently replace what the user
+    /// already has on this device. Returns whether it was actually added.
+    @discardableResult
+    func restore(_ character: CharacterCard) -> Bool {
+        guard !characters.contains(where: { $0.id == character.id }) else { return false }
+        characters.insert(character, at: 0)
+        store.saveSoon(characters)
+        return true
+    }
+
     /// Replaces the character's picture, cleaning up the file it replaced.
     /// Returns `false` when the image could not be written, leaving the old one
     /// in place rather than blanking the avatar.
