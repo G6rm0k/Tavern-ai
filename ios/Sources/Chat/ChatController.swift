@@ -47,6 +47,14 @@ final class ChatController: ObservableObject {
         characterStore.character(id: chat.characterId)
     }
 
+    /// Who `{{user}}` refers to, for anything the View layer needs to fill
+    /// outside of a request going upstream (e.g. a character's static
+    /// greeting text, which is written with the same placeholders as its
+    /// system prompt but isn't part of `generate()`'s own fill step).
+    var displayUserName: String {
+        PromptAssembler.userName(persona: settingsStore.settings.persona)
+    }
+
     // MARK: - Send
 
     func send(_ rawText: String) {
