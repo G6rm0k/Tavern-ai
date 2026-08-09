@@ -17,6 +17,10 @@ struct ChatView: View {
         .navigationTitle(controller.chat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(WesaidTheme.background, for: .navigationBar)
+        // Matches the web version's `.mob-nav.nav-hidden`: the bottom nav
+        // disappears entirely once you're inside a conversation, so the
+        // keyboard and input bar get the full screen.
+        .toolbar(.hidden, for: .tabBar)
         // Regenerating a reply that has messages after it abandons that
         // branch — mirrors the confirm() the web version shows.
         .alert("Дальнейшие сообщения будут удалены", isPresented: Binding(

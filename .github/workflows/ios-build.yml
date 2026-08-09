@@ -34,6 +34,17 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
           xcrun simctl list devices available | grep -i "iPhone 1" || true
 
+      # macos-15 runners ship several Xcode versions side by side; the
+      # default selected one lags behind. Pin to Xcode 26 explicitly so the
+      # app links against the iOS 26 SDK and picks up Liquid Glass — without
+      # this, a plain, uncustomized TabView still renders as the flat,
+      # pre-26 bar even on a device that itself runs iOS 26.
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
