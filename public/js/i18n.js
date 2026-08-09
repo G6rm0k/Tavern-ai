@@ -61,6 +61,7 @@ const STRINGS = {
     // Settings
     'settings.title': 'Настройки', 'settings.providers': 'Сервисы', 'settings.model': 'Параметры модели',
     'settings.appearance': 'Внешний вид', 'settings.language': 'Язык', 'settings.app': 'Приложение',
+    'settings.translateLang': 'Переводить импортированных персонажей на',
     'settings.add.provider': 'Добавить сервис', 'settings.no.providers': 'Сервисы не подключены',
     'settings.theme': 'Тема', 'settings.theme.dark': 'Тёмная', 'settings.theme.light': 'Светлая',
     'settings.accent': 'Цвет акцента', 'settings.accent.hint': 'Нажми на круг',
@@ -242,6 +243,7 @@ const STRINGS = {
 
     'settings.title': 'Settings', 'settings.providers': 'Services', 'settings.model': 'Model Parameters',
     'settings.appearance': 'Appearance', 'settings.language': 'Language', 'settings.app': 'App',
+    'settings.translateLang': 'Translate imported characters to',
     'settings.add.provider': 'Add service', 'settings.no.providers': 'No services connected',
     'settings.theme': 'Theme', 'settings.theme.dark': 'Dark', 'settings.theme.light': 'Light',
     'settings.accent': 'Accent colour', 'settings.accent.hint': 'Tap the circle',

@@ -215,6 +215,12 @@ const Settings = {
           <button class="sv-opt ${i18n.lang === 'ru' ? 'on' : ''}" onclick="Settings.setLang('ru')">🇷🇺 Русский</button>
           <button class="sv-opt ${i18n.lang === 'en' ? 'on' : ''}" onclick="Settings.setLang('en')">🇬🇧 English</button>
         </div>
+        <div class="sv-sep"></div>
+        <div class="sv-label">${t('settings.translateLang')}</div>
+        <div class="sv-2col">
+          <button class="sv-opt ${(a.translateLang || i18n.lang) === 'ru' ? 'on' : ''}" onclick="Settings.setTranslateLang('ru')">🇷🇺 Русский</button>
+          <button class="sv-opt ${(a.translateLang || i18n.lang) === 'en' ? 'on' : ''}" onclick="Settings.setTranslateLang('en')">🇬🇧 English</button>
+        </div>
       </div>
 
       <!-- Phone access: beats telling a beginner to run ipconfig -->
@@ -417,6 +423,14 @@ const Settings = {
     await this.save();
   },
   async setLang(v)   { this.data.language   = v; i18n.setLang(v); await this.save(); App.navigate('settings'); },
+  // Independent of the UI language: someone can read the app in Russian
+  // while still wanting imported cards translated to English, or vice versa.
+  async setTranslateLang(v) {
+    if (!this.data.app) this.data.app = {};
+    this.data.app.translateLang = v;
+    await this.save();
+    App.navigate('settings');
+  },
 
   _advOpen: false,
 

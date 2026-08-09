@@ -41,6 +41,7 @@ struct SettingsView: View {
             personaSection
             memorySection
             thinkingSection
+            translationSection
             faceIDSection
             backupSection
         }
@@ -226,6 +227,24 @@ struct SettingsView: View {
             .tint(WesaidTheme.accent)
         } footer: {
             Text("Модель сначала подробно рассуждает, потом отвечает — работает с любым провайдером через обычный промт, не через специальный режим конкретной модели. Каждый чат можно переключить отдельно значком мозга у поля ввода.")
+        }
+        .listRowBackground(WesaidTheme.surface)
+    }
+
+    private var translationSection: some View {
+        Section {
+            Picker("Язык", selection: Binding(
+                get: { settings.settings.preferences.translateLanguage },
+                set: { settings.settings.preferences.translateLanguage = $0 }
+            )) {
+                Text("🇷🇺 Русский").tag("ru")
+                Text("🇬🇧 English").tag("en")
+            }
+            .pickerStyle(.segmented)
+        } header: {
+            Text("Перевод импортированных персонажей")
+        } footer: {
+            Text("Приветствия и описание персонажа с Chub.ai автоматически переводятся на выбранный язык, если ещё не на нём написаны.")
         }
         .listRowBackground(WesaidTheme.surface)
     }

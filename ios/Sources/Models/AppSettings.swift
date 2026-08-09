@@ -129,20 +129,29 @@ struct AppPreferences: Codable, Hashable {
     /// This is the default for new chats; each chat can still override it.
     var forceThinkingByDefault: Bool
 
-    init(memoryEnabled: Bool = false, forceThinkingByDefault: Bool = false) {
+    /// Target language ("ru"/"en") for auto-translating a Chub.ai import's
+    /// first messages and description — independent of anything else, since
+    /// this app has no UI localization layer of its own to tie it to.
+    var translateLanguage: String
+
+    init(memoryEnabled: Bool = false, forceThinkingByDefault: Bool = false, translateLanguage: String = "ru") {
         self.memoryEnabled = memoryEnabled
         self.forceThinkingByDefault = forceThinkingByDefault
+        self.translateLanguage = translateLanguage
     }
 
     enum CodingKeys: String, CodingKey {
         case memoryEnabled = "memory"
         case forceThinkingByDefault = "forceThinking"
+        // Matches the key the web version writes under `settings.app` on disk.
+        case translateLanguage = "translateLang"
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         memoryEnabled = (try? c.decode(Bool.self, forKey: .memoryEnabled)) ?? false
         forceThinkingByDefault = (try? c.decode(Bool.self, forKey: .forceThinkingByDefault)) ?? false
+        translateLanguage = (try? c.decode(String.self, forKey: .translateLanguage)) ?? "ru"
     }
 }
 

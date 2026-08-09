@@ -10,6 +10,7 @@ struct DiscoverView: View {
     @EnvironmentObject private var settings: SettingsStore
 
     private let client = ChubAPIClient()
+    private let translator = TranslatorClient()
 
     private struct Category: Identifiable {
         let id: String
@@ -248,13 +249,47 @@ struct DiscoverView: View {
                     firstMessages: parsed.firstMessages,
                     tags: parsed.tags
                 )
-                characters.upsert(card)
-                characters.setAvatar(data, for: card.id)
-                navigateTo = card
+                // Translate before the first save: `translated(_:)` works off
+                // this freshly-built value, which has no avatar yet — saving
+                // it first and mutating a stale local copy afterwards would
+                // wipe out the avatar `setAvatar` is about to attach below.
+                let finalCard = await translated(card)
+                characters.upsert(finalCard)
+                characters.setAvatar(data, for: finalCard.id)
+                navigateTo = finalCard
             } catch {
                 errorMessage = "Не получилось добавить «\(character.name)» — файл карточки повреждён или недоступен."
             }
         }
+    }
+
+    /// Chub cards are overwhelmingly written in English; without this a
+    /// freshly imported character's greetings and description stay in
+    /// whatever language the card happened to ship in. Mirrors
+    /// `Translator.translateImportedChar` in `public/js/translator.js` —
+    /// same target-language setting, extended (there too, not just here) to
+    /// also cover `description`, which the original only left in English.
+    private func translated(_ card: CharacterCard) async -> CharacterCard {
+        let targetLanguage = settings.settings.preferences.translateLanguage
+        let sample = card.firstMessages.first ?? card.description
+        guard !sample.isEmpty else { return card }
+        let detected = TranslatorClient.detectLanguage(sample)
+        guard detected != targetLanguage else { return card }
+
+        var updated = card
+        var translatedMessages: [String] = []
+        for message in card.firstMessages {
+            guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                translatedMessages.append(message)
+                continue
+            }
+            translatedMessages.append(await translator.translate(message, from: detected, to: targetLanguage))
+        }
+        updated.firstMessages = translatedMessages
+        if !card.description.isEmpty {
+            updated.description = await translator.translate(card.description, from: detected, to: targetLanguage)
+        }
+        return updated
     }
 
     /// Same one-conversation-per-character convenience as `HomeView`.
