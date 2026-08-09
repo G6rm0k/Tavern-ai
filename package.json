@@ -1,11 +1,27 @@
 {
   "name": "wesaid-app",
-  "version": "3.0.0",
+  "version": "3.2.0",
   "description": "Local Chat Frontend",
   "main": "server/index.js",
+  "bin": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
-    "dev": "node server/index.js"
+    "dev": "node server/index.js",
+    "build": "pkg . --out-path dist",
+    "build:win": "pkg . --targets node20-win-x64 --out-path dist",
+    "build:mac": "pkg . --targets node20-macos-x64,node20-macos-arm64 --out-path dist",
+    "build:linux": "pkg . --targets node20-linux-x64 --out-path dist"
+  },
+  "pkg": {
+    "assets": [
+      "public/**/*"
+    ],
+    "targets": [
+      "node20-win-x64",
+      "node20-macos-x64",
+      "node20-linux-x64"
+    ],
+    "outputPath": "dist"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -16,7 +32,13 @@
     "jsonwebtoken": "^9.0.3",
     "multer": "^1.4.5-lts.1",
     "node-fetch": "^2.7.0",
-    "playwright": "^1.62.1",
     "uuid": "^9.0.0"
-  }
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.3.0"
+  },
+  "overrides": {
+    "@yao-pkg/pkg-fetch": "3.5.34"
+  },
+  "_comment_overrides": "@yao-pkg/pkg-fetch 3.6.x computes a 'v3.6' base-binary release tag that pkg-fetch has never actually published (v3.5 is the latest with real assets), so any 3.6.x version 404s fetching Node's prebuilt binary and pkg falls back to compiling Node from source. Pinned to the last 3.5.x release, which resolves against real GitHub release assets."
 }

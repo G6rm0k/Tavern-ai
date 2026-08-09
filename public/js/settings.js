@@ -269,19 +269,26 @@ const Settings = {
         </button>
       </div>
 
-      <!-- About -->
+      <!-- About / updates -->
       <div class="sv-card">
         <div class="sv-about">
           <div class="sv-about-logo">wesaid</div>
-          <div class="sv-about-ver">v3.1.0</div>
+          <div class="sv-about-ver" id="sv-ver">v3.2.0</div>
           <div class="sv-about-desc">Chat Frontend</div>
         </div>
+        <div id="sv-update" class="sv-update"></div>
+        <button class="sv-action" onclick="Settings.checkUpdate()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M23 4v6h-6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10"/><path d="M1 20v-6h6"/><path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          ${t('upd.check')}
+        </button>
+        <div id="sv-shortcut"></div>
       </div>
 
     </div>`;
 
     this._renderQR();
     this._renderPasskey();
+    this._renderShortcuts();
 
     // Bind model param sliders (inside #sv-mp-sliders only)
     const mpWrap = document.getElementById('sv-mp-sliders');
@@ -412,6 +419,53 @@ const Settings = {
   async setLang(v)   { this.data.language   = v; i18n.setLang(v); await this.save(); App.navigate('settings'); },
 
   _advOpen: false,
+
+  // ── UPDATES ────────────────────────────────────────────────────────────────
+  async checkUpdate() {
+    const box = document.getElementById('sv-update');
+    box.className = 'sv-update on';
+    box.textContent = t('upd.checking');
+    try {
+      const r = await API.checkUpdate();
+      document.getElementById('sv-ver').textContent = 'v' + r.current;
+      if (r.error) { box.className = 'sv-update on'; box.textContent = t('upd.failed'); return; }
+      if (r.available) {
+        box.className = 'sv-update on good';
+        box.innerHTML = `${t('upd.available').replace('%s', esc(r.latest))} —
+          <a class="wz-link" href="${escAttr(r.url)}" target="_blank" rel="noopener">${t('upd.download')}</a>`;
+      } else {
+        box.className = 'sv-update on';
+        box.textContent = t('upd.latest');
+      }
+    } catch (e) {
+      box.className = 'sv-update on';
+      box.textContent = t('upd.failed');
+    }
+  },
+
+  // Windows-only, and only shown once the server confirms it.
+  async _renderShortcuts() {
+    const wrap = document.getElementById('sv-shortcut');
+    if (!wrap) return;
+    let st;
+    try { st = await API.shortcutState(); } catch { return; }
+    if (!st?.supported) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = `
+      <button class="sv-action" onclick="Settings.toggleShortcut('desktop', ${st.desktop})">
+        🖥️ ${st.desktop ? t('upd.shortcutOff') : t('upd.shortcut')}
+      </button>
+      <button class="sv-action" onclick="Settings.toggleShortcut('startup', ${st.startup})">
+        🚀 ${st.startup ? t('upd.autostartOff') : t('upd.autostart')}
+      </button>`;
+  },
+
+  async toggleShortcut(where, exists) {
+    try {
+      await API.makeShortcut(where, exists);
+      await this._renderShortcuts();
+      toast(exists ? t('toast.deleted') : t('upd.shortcutOk'), 'success');
+    } catch (e) { toastError(e); }
+  },
 
   async savePersona() {
     this.data.persona = {

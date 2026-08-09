@@ -9,9 +9,16 @@ const bcrypt = require('bcryptjs');
 const jwt    = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 
+// ── PATHS ────────────────────────────────────────────────────────────────────
+// When bundled into a single executable the code lives inside a read-only
+// snapshot, so anything the user owns has to sit next to the .exe instead.
+const IS_PACKAGED = !!process.pkg;
+const APP_ROOT    = IS_PACKAGED ? path.dirname(process.execPath) : path.join(__dirname, '..');
+const PUBLIC_DIR  = path.join(__dirname, '..', 'public'); // inside the snapshot when packaged
+
 // Persistent JWT secret — survives restarts so users stay logged in.
 // Regenerating on every restart invalidated all tokens (broke character saving etc.)
-const _jwtFile = path.join(__dirname, '..', 'data', '.jwtsecret');
+const _jwtFile = path.join(APP_ROOT, 'data', '.jwtsecret');
 let JWT_SECRET;
 if (fs.existsSync(_jwtFile)) {
   JWT_SECRET = fs.readFileSync(_jwtFile, 'utf8').trim();
@@ -176,7 +183,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Data directory for persistence
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = path.join(APP_ROOT, 'data');
 const CHARS_FILE    = path.join(DATA_DIR, 'characters.json');
 const CHATS_FILE    = path.join(DATA_DIR, 'chats.json');
 const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
@@ -335,7 +342,7 @@ process.on('unhandledRejection', (e) => {
 
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001'] }));
 app.use(express.json({ limit: '50mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(PUBLIC_DIR));
 // Avatars live on disk now and are served as ordinary files, so the browser can
 // cache them instead of re-downloading megabytes of base64 with every list.
 app.use('/avatars', express.static(path.join(DATA_DIR, 'avatars'), {
@@ -1549,7 +1556,11 @@ app.post('/api/admin/restart', (req, res) => {
   flushAll(); // never restart on top of unflushed writes
   setTimeout(() => {
     const { spawn } = require('child_process');
-    const child = spawn(process.argv[0], process.argv.slice(1), {
+    // A packaged build is its own launcher; a plain checkout needs node + script.
+    const [cmd, args] = IS_PACKAGED
+      ? [process.execPath, []]
+      : [process.argv[0], process.argv.slice(1)];
+    const child = spawn(cmd, args, {
       cwd: process.cwd(),
       detached: true,
       stdio: 'ignore',
@@ -1682,6 +1693,94 @@ app.post('/api/restore', (req, res) => {
   }
 });
 
+// ─── UPDATES ────────────────────────────────────────────────────────────────
+// A beginner is never going to run `git pull`. Check the published releases and
+// hand back a download link when there is a newer one.
+const APP_VERSION = require('../package.json').version;
+// Overridable so a fork can point at its own repository.
+const RELEASES_API = process.env.WESAID_RELEASES_API
+  || 'https://api.github.com/repos/G6rm0k/Tavern-ai/releases/latest';
+
+function newerVersion(a, b) {
+  const pa = String(a).replace(/^v/, '').split('.').map(Number);
+  const pb = String(b).replace(/^v/, '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return true;
+    if ((pa[i] || 0) < (pb[i] || 0)) return false;
+  }
+  return false;
+}
+
+app.get('/api/update/check', async (req, res) => {
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
+  try {
+    const r = await proxyFetch(RELEASES_API, { timeout: 8000 });
+    if (r.status !== 200) return res.json({ current: APP_VERSION, error: `GitHub вернул ${r.status}` });
+    const data = JSON.parse(r.body);
+    const latest = String(data.tag_name || '').replace(/^v/, '');
+    res.json({
+      current: APP_VERSION,
+      latest,
+      available: !!latest && newerVersion(latest, APP_VERSION),
+      url: data.html_url || 'https://github.com/G6rm0k/Tavern-ai/releases',
+      notes: String(data.body || '').slice(0, 1500),
+    });
+  } catch (e) {
+    res.json({ current: APP_VERSION, error: e.message });
+  }
+});
+
+// ─── SHORTCUTS (Windows) ────────────────────────────────────────────────────
+// A desktop icon so the app can be started without hunting for the folder, and
+// an optional Startup entry so it is simply always there. Both are ordinary
+// .lnk files — no native modules, nothing to uninstall but a file.
+const SHORTCUT_FOLDERS = { desktop: 'Desktop', startup: 'Startup' };
+
+app.post('/api/shortcut', (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (process.platform !== 'win32') {
+    return res.status(400).json({ error: 'Доступно только в Windows', code: 'NOT_WINDOWS' });
+  }
+  const where = SHORTCUT_FOLDERS[req.body?.where] ? req.body.where : 'desktop';
+  const folder = SHORTCUT_FOLDERS[where];
+  const remove = !!req.body?.remove;
+  const target = IS_PACKAGED ? process.execPath : path.join(APP_ROOT, 'start.bat');
+
+  const { execFile } = require('child_process');
+  // PowerShell's COM bridge is the only way to write a real .lnk.
+  const ps = remove ? `
+    $p = Join-Path ([Environment]::GetFolderPath('${folder}')) 'wesaid.lnk'
+    if (Test-Path $p) { Remove-Item $p -Force }` : `
+    $p = Join-Path ([Environment]::GetFolderPath('${folder}')) 'wesaid.lnk'
+    $s = (New-Object -ComObject WScript.Shell).CreateShortcut($p)
+    $s.TargetPath = ${JSON.stringify(target)}
+    $s.WorkingDirectory = ${JSON.stringify(APP_ROOT)}
+    $s.Description = 'wesaid'
+    $s.Save()`;
+
+  execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], (err) => {
+    if (err) return res.status(500).json({ error: 'Не удалось: ' + err.message });
+    res.json({ ok: true, where, removed: remove });
+  });
+});
+
+// Which shortcuts already exist, so the UI can show the real state.
+app.get('/api/shortcut', (req, res) => {
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
+  if (process.platform !== 'win32') return res.json({ supported: false });
+  const { execFile } = require('child_process');
+  const ps = `
+    $d = Test-Path (Join-Path ([Environment]::GetFolderPath('Desktop')) 'wesaid.lnk')
+    $s = Test-Path (Join-Path ([Environment]::GetFolderPath('Startup')) 'wesaid.lnk')
+    Write-Output "$d $s"`;
+  execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], (err, out) => {
+    if (err) return res.json({ supported: true, desktop: false, startup: false });
+    const [d, s] = String(out).trim().split(/\s+/);
+    res.json({ supported: true, desktop: d === 'True', startup: s === 'True' });
+  });
+});
+
 // ─── NETWORK INFO (for the phone QR code) ───────────────────────────────────
 app.get('/api/netinfo', (req, res) => {
   if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
@@ -1729,7 +1828,7 @@ app.use('/api', (req, res) => {
 
 // Serve SPA for all other routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
 });
 
 // ─── START ───────────────────────────────────────────────────────────────────

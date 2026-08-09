@@ -117,6 +117,17 @@ const STRINGS = {
     'toast.saved': 'Сохранено', 'toast.deleted': 'Удалено', 'toast.copied': 'Скопировано',
     'toast.imported': 'Импортировано', 'toast.error': 'Ошибка',
 
+    // Updates
+    'upd.check': 'Проверить обновления', 'upd.checking': 'Проверяю…',
+    'upd.latest': 'Установлена последняя версия',
+    'upd.available': 'Доступна версия %s', 'upd.download': 'скачать',
+    'upd.failed': 'Не удалось проверить — нет связи с GitHub',
+    'upd.shortcut': 'Создать ярлык на рабочем столе',
+    'upd.shortcutOff': 'Убрать ярлык с рабочего стола',
+    'upd.autostart': 'Запускать вместе с Windows',
+    'upd.autostartOff': 'Не запускать вместе с Windows',
+    'upd.shortcutOk': 'Готово',
+
     // Passkey
     'pk.title': 'Вход по отпечатку',
     'pk.enable': 'Включить вход по отпечатку',
@@ -281,6 +292,15 @@ const STRINGS = {
     'toast.saved': 'Saved', 'toast.deleted': 'Deleted', 'toast.copied': 'Copied',
     'toast.imported': 'Imported', 'toast.error': 'Error',
 
+    'upd.check': 'Check for updates', 'upd.checking': 'Checking…',
+    'upd.latest': 'You are on the latest version',
+    'upd.available': 'Version %s is available', 'upd.download': 'download',
+    'upd.failed': 'Could not check — no connection to GitHub',
+    'upd.shortcut': 'Create a desktop shortcut',
+    'upd.shortcutOff': 'Remove the desktop shortcut',
+    'upd.autostart': 'Start together with Windows',
+    'upd.autostartOff': 'Do not start with Windows',
+    'upd.shortcutOk': 'Done',
     'pk.title': 'Sign in with your fingerprint',
     'pk.enable': 'Enable fingerprint sign-in',
     'pk.disable': 'Disable fingerprint sign-in',

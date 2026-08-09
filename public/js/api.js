@@ -65,6 +65,9 @@ const API = {
   listModels: (p) => API.post('/api/models', p),
   detectLocal: () => API.get('/api/local/detect'),
   netInfo: () => API.get('/api/netinfo'),
+  checkUpdate: () => API.get('/api/update/check'),
+  shortcutState: () => API.get('/api/shortcut'),
+  makeShortcut: (where, remove) => API.post('/api/shortcut', { where, remove }),
 
   // Backup
   getBackup: (withKeys) => API.get(`/api/backup${withKeys ? '?keys=1' : ''}`),
