@@ -26,7 +26,7 @@ final class CharacterWizardController: ObservableObject {
     }
 
     struct Message: Identifiable {
-        let id = UUID()
+        let id = UUID().uuidString
         let sender: Sender
         var text: String
     }
