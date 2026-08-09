@@ -14,13 +14,29 @@ const API = {
     return h;
   },
 
+  // Set by App: called when the server says the session is locked (the server
+  // restarted, so the in-memory encryption key is gone). Without this the client
+  // used to receive raw "enc:..." strings and show them as chat messages.
+  onLocked: null,
+
   async req(method, path, body) {
     const res = await fetch(path, {
       method, headers: this.headers(),
       body: body ? JSON.stringify(body) : undefined
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Request failed');
+
+    let data = {};
+    try { data = await res.json(); } catch {}
+
+    if (!res.ok) {
+      if (data.code === 'NEED_UNLOCK' && typeof this.onLocked === 'function') {
+        this.onLocked();
+      }
+      const err = new Error(data.error || `Ошибка ${res.status}`);
+      err.status = res.status;
+      err.code   = data.code;
+      throw err;
+    }
     return data;
   },
 
@@ -35,11 +51,24 @@ const API = {
   login: (data) => API.post('/api/auth/login', data),
   me: () => API.get('/api/auth/me'),
   updateProfile: (data) => API.patch('/api/auth/profile', data),
+  unlock: (password) => API.post('/api/auth/unlock', { password }),
+  changePassword: (current, next) => API.post('/api/auth/password', { current, next }),
 
   // Settings
   getPresets: () => API.get('/api/presets'),
   getSettings: () => API.get('/api/settings'),
   saveSettings: (data) => API.post('/api/settings', data),
+
+  // Provider helpers (all server-side: the browser cannot reach most providers
+  // directly because of CORS, and doing so leaked the key out of the page)
+  testProvider: (p) => API.post('/api/provider/test', p),
+  listModels: (p) => API.post('/api/models', p),
+  detectLocal: () => API.get('/api/local/detect'),
+  netInfo: () => API.get('/api/netinfo'),
+
+  // Backup
+  getBackup: (withKeys) => API.get(`/api/backup${withKeys ? '?keys=1' : ''}`),
+  restore: (data) => API.post('/api/restore', data),
 
   // Characters
   getCharacters: () => API.get('/api/characters'),
@@ -55,6 +84,7 @@ const API = {
   getChat: (id) => API.get(`/api/chats/${id}`),
   saveMessages: (id, messages) => API.patch(`/api/chats/${id}/messages`, { messages }),
   deleteChat: (id) => API.del(`/api/chats/${id}`),
+  deleteAllChats: () => API.del('/api/chats'),
 
   // Stream AI
   _streamCtrl: null,
@@ -66,6 +96,9 @@ const API = {
   async stream(payload, onChunk, onDone, onError) {
     this.abortStream();
     this._streamCtrl = new AbortController();
+    // Declared out here so a user-pressed Stop can still keep what already
+    // arrived instead of throwing the half-written reply away.
+    let fullText = '';
     try {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -75,15 +108,18 @@ const API = {
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        onError(err.error || 'Stream failed');
+        let err = {};
+        try { err = await res.json(); } catch {}
+        if (err.code === 'NEED_UNLOCK' && typeof this.onLocked === 'function') this.onLocked();
+        // Hand the whole object over so humanError() can use status and code,
+        // not just a raw provider blob.
+        onError({ ...err, status: res.status });
         return;
       }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let fullText = '';
 
       while (true) {
         const { done, value } = await reader.read();
@@ -98,7 +134,7 @@ const API = {
           if (raw === '[DONE]') continue;
           try {
             const obj = JSON.parse(raw);
-            if (obj.error) { onError(obj.error); return; }
+            if (obj.error) { onError(obj); return; }
             const delta = obj.choices?.[0]?.delta?.content;
             if (delta) {
               fullText += delta;
@@ -111,8 +147,8 @@ const API = {
       onDone(fullText);
     } catch (e) {
       this._streamCtrl = null;
-      if (e.name === 'AbortError') return; // intentional cancel
-      onError(e.message);
+      if (e.name === 'AbortError') { onDone(fullText, true); return; } // Stop pressed — keep what we got
+      onError({ error: e.message });
     }
   },
 

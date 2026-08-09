@@ -69,9 +69,13 @@ function decryptProviders(providers, key) {
 
 // ── ENCRYPT / DECRYPT HELPERS FOR ALL DATA ──────────────────────────────────
 
-// Encrypt sensitive character fields before writing to disk
+// Encrypt sensitive character fields before writing to disk.
+// Public characters are stored in the clear on purpose: they are encrypted with
+// the *owner's* key, so encrypting them made them unreadable to everybody else —
+// other users saw "enc:..." as the description and the model got it as the
+// system prompt. Sharing simply did not work.
 function encryptCharacter(char, key) {
-  if (!key) return char;
+  if (!key || char.visibility === 'public') return char;
   const c = { ...char };
   if (c.systemPrompt && !c.systemPrompt.startsWith('enc:'))
     c.systemPrompt = encryptField(c.systemPrompt, key);
@@ -197,18 +201,123 @@ const initFile = (file, defaultData) => {
 };
 initFile(CHARS_FILE, []);
 initFile(CHATS_FILE, []);
-initFile(SETTINGS_FILE, { apiProviders: [], activeProvider: null });
+initFile(SETTINGS_FILE, {});
 initFile(USERS_FILE, []);
 initFile(INVITES_FILE, []);
 initFile(POSTS_FILE, []);
 
-// Helpers
-const readJSON = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
-const writeJSON = (file, data) => fs.writeFileSync(file, JSON.stringify(data, null, 2));
+// ── STORAGE ──────────────────────────────────────────────────────────────────
+// Every write used to rewrite a whole file synchronously. chats.json grows to
+// tens of MB, so that blocked the event loop in the middle of a stream, and a
+// crash mid-write left a truncated file that made every later request fail with
+// no way back. Now: parsed data is cached in memory, writes are debounced and
+// atomic (tmp + rename), and rolling backups let a damaged file be recovered.
+
+const DEFAULTS = {
+  [CHARS_FILE]: [], [CHATS_FILE]: [], [USERS_FILE]: [],
+  [INVITES_FILE]: [], [POSTS_FILE]: [], [SETTINGS_FILE]: {},
+};
+
+const FLUSH_DELAY_MS  = 300;
+const BACKUP_EVERY_MS = 5 * 60 * 1000;
+
+const _cache   = new Map(); // file → parsed data (authoritative while running)
+const _dirty   = new Set(); // files with unflushed changes
+const _lastBak = new Map(); // file → timestamp of last backup copy
+let   _flushTimer = null;
+
+function readJSON(file) {
+  if (_cache.has(file)) return _cache.get(file);
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    data = recoverJSON(file, e);
+  }
+  _cache.set(file, data);
+  return data;
+}
+
+// A truncated or corrupted file used to 500 every single request forever.
+// Try the rolling backups first, keep the damaged copy for forensics, and only
+// fall back to empty data as a last resort — but say so loudly either way.
+function recoverJSON(file, err) {
+  const name = path.basename(file);
+  for (const suffix of ['.bak1', '.bak2']) {
+    try {
+      const data = JSON.parse(fs.readFileSync(file + suffix, 'utf8'));
+      const kept = file + '.damaged-' + Date.now();
+      try { fs.renameSync(file, kept); } catch {}
+      fs.writeFileSync(file, JSON.stringify(data));
+      console.warn(`\n⚠️  Файл ${name} повреждён (${err.message})`);
+      console.warn(`    Восстановлен из ${name + suffix}. Повреждённая копия: ${path.basename(kept)}\n`);
+      return data;
+    } catch {}
+  }
+  console.error(`\n❌ Файл ${name} повреждён, рабочей резервной копии нет — начинаю с пустого.`);
+  console.error(`    Старый файл сохранён рядом с пометкой .damaged-*\n`);
+  try { fs.renameSync(file, file + '.damaged-' + Date.now()); } catch {}
+  return Array.isArray(DEFAULTS[file]) ? [] : {};
+}
+
+function writeJSON(file, data) {
+  _cache.set(file, data);
+  _dirty.add(file);
+  if (!_flushTimer) _flushTimer = setTimeout(flushAll, FLUSH_DELAY_MS);
+}
+
+function flushAll() {
+  if (_flushTimer) { clearTimeout(_flushTimer); _flushTimer = null; }
+  for (const file of _dirty) {
+    try { flushOne(file); }
+    catch (e) { console.error('Не удалось сохранить', path.basename(file) + ':', e.message); }
+  }
+  _dirty.clear();
+}
+
+function flushOne(file) {
+  const data = _cache.get(file);
+  if (data === undefined) return;
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data));
+
+  // Rolling backup, but not on every write — copying tens of MB constantly
+  // would bring back exactly the stall we are trying to remove.
+  const now = Date.now();
+  if (fs.existsSync(file) && now - (_lastBak.get(file) || 0) > BACKUP_EVERY_MS) {
+    try {
+      if (fs.existsSync(file + '.bak1')) fs.copyFileSync(file + '.bak1', file + '.bak2');
+      fs.copyFileSync(file, file + '.bak1');
+      _lastBak.set(file, now);
+    } catch {}
+  }
+
+  fs.renameSync(tmp, file); // atomic within one filesystem
+}
+
+// Closing the window must not cost the last few hundred milliseconds of work.
+process.on('exit', () => { try { flushAll(); } catch {} });
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { try { flushAll(); } catch {} process.exit(0); });
+}
+// Staying alive beats dying on a stray async error: this is a local app the user
+// may have no obvious way to restart. Persist what we have and keep serving.
+process.on('uncaughtException', (e) => {
+  console.error('Непредвиденная ошибка (сервер продолжает работать):', e);
+  try { flushAll(); } catch {}
+});
+process.on('unhandledRejection', (e) => {
+  console.error('Непредвиденная ошибка в асинхронном коде:', e);
+});
 
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:3001'] }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// Avatars live on disk now and are served as ordinary files, so the browser can
+// cache them instead of re-downloading megabytes of base64 with every list.
+app.use('/avatars', express.static(path.join(DATA_DIR, 'avatars'), {
+  maxAge: '7d', immutable: true, fallthrough: true,
+}));
 
 const globalLimit = rateLimit({ windowMs: 15*60*1000, max: 500, standardHeaders: true, legacyHeaders: false });
 const authLimit   = rateLimit({ windowMs: 15*60*1000, max: 30,  standardHeaders: true, legacyHeaders: false });
@@ -225,13 +334,191 @@ const verifyToken = (req) => {
   } catch { return null; }
 };
 
+// The encryption key is derived from the login password and kept only in memory,
+// so a server restart leaves a still-valid 90-day token with no key. Serving
+// those requests handed the client raw "enc:..." strings, which then went into
+// the model as chat history and as the character's system prompt. Ask for the
+// password again instead of serving garbage.
+const requireUser = (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return null; }
+  if (!keyStore.has(userId)) {
+    res.status(401).json({ error: 'Session locked', code: 'NEED_UNLOCK' });
+    return null;
+  }
+  return userId;
+};
+
+// ─── AVATAR STORAGE ─────────────────────────────────────────────────────────
+// Avatars used to be embedded as base64 data URLs inside characters.json, which
+// is why that file grew to tens of MB: every character list request shipped all
+// of them to the browser, and every save rewrote them. They are files now; the
+// JSON keeps only a path.
+
+const AVATARS_DIR = path.join(DATA_DIR, 'avatars');
+if (!fs.existsSync(AVATARS_DIR)) fs.mkdirSync(AVATARS_DIR, { recursive: true });
+
+const AVATAR_EXT = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
+
+// Returns a servable path, or the input unchanged when it is not a data URL.
+function storeAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('data:image/')) return value;
+  const m = /^data:([^;,]+);base64,(.+)$/s.exec(value);
+  if (!m) return null;
+  const ext = AVATAR_EXT[m[1].toLowerCase()] || 'png';
+  try {
+    const buf = Buffer.from(m[2], 'base64');
+    if (!buf.length) return null;
+    const name = `${uuidv4()}.${ext}`;
+    fs.writeFileSync(path.join(AVATARS_DIR, name), buf);
+    return `/avatars/${name}`;
+  } catch (e) {
+    console.warn('Не удалось сохранить аватар:', e.message);
+    return null;
+  }
+}
+
+function deleteAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('/avatars/')) return;
+  const name = path.basename(value);
+  try { fs.unlinkSync(path.join(AVATARS_DIR, name)); } catch {}
+}
+
+// Inline a stored avatar back into a data URL, so a backup file stands alone.
+function inlineAvatar(value) {
+  if (typeof value !== 'string' || !value.startsWith('/avatars/')) return value;
+  try {
+    const name = path.basename(value);
+    const ext  = path.extname(name).slice(1).toLowerCase();
+    const mime = Object.keys(AVATAR_EXT).find(k => AVATAR_EXT[k] === ext) || 'image/png';
+    const buf  = fs.readFileSync(path.join(AVATARS_DIR, name));
+    return `data:${mime};base64,` + buf.toString('base64');
+  } catch { return null; }
+}
+
+// One-time migration of anything still embedded in the JSON files.
+function migrateEmbeddedAvatars() {
+  let moved = 0;
+  try {
+    const chars = readJSON(CHARS_FILE);
+    for (const c of chars) {
+      if (typeof c.avatar === 'string' && c.avatar.startsWith('data:image/')) {
+        c.avatar = storeAvatar(c.avatar);
+        moved++;
+      }
+    }
+    if (moved) writeJSON(CHARS_FILE, chars);
+
+    const users = readJSON(USERS_FILE);
+    let userMoved = 0;
+    for (const u of users) {
+      for (const field of ['avatar', 'banner']) {
+        if (typeof u[field] === 'string' && u[field].startsWith('data:image/')) {
+          u[field] = storeAvatar(u[field]);
+          userMoved++;
+        }
+      }
+    }
+    if (userMoved) writeJSON(USERS_FILE, users);
+    moved += userMoved;
+
+    const chats = readJSON(CHATS_FILE);
+    let chatMoved = 0;
+    for (const ch of chats) {
+      if (typeof ch.characterAvatar === 'string' && ch.characterAvatar.startsWith('data:image/')) {
+        ch.characterAvatar = storeAvatar(ch.characterAvatar);
+        chatMoved++;
+      }
+    }
+    if (chatMoved) writeJSON(CHATS_FILE, chats);
+    moved += chatMoved;
+
+    if (moved) {
+      flushAll();
+      console.log(`🖼️  Вынесено ${moved} изображений из JSON в data/avatars`);
+    }
+  } catch (e) {
+    console.warn('Миграция аватаров не удалась:', e.message);
+  }
+}
+
+// ─── STARTER CHARACTERS ─────────────────────────────────────────────────────
+// A brand new account used to land on an empty screen with nothing to click.
+// These are seeded once, at registration, and can be deleted like any other.
+const STARTER_CHARACTERS = [
+  {
+    name: 'Помощник', avatar_emoji: '✦',
+    description: 'Отвечает на вопросы, объясняет и помогает с текстами',
+    systemPrompt: 'Ты — дружелюбный и толковый помощник по имени {{char}}. Отвечай понятно и по делу, без лишней воды. Если вопрос неоднозначный — уточни. Обращайся к собеседнику по имени {{user}}, когда это уместно. Отвечай на языке собеседника.',
+    firstMessages: ['Привет, {{user}}! Спрашивай о чём угодно — помогу разобраться, объясню сложное простыми словами или помогу с текстом.'],
+  },
+  {
+    name: 'Переводчик', avatar_emoji: '🌐',
+    description: 'Переводит на любой язык и объясняет нюансы',
+    systemPrompt: 'Ты — {{char}}, профессиональный переводчик. Переводи присланный текст, сохраняя смысл и тон. Если язык перевода не указан — переводи русский на английский, а любой другой на русский. После перевода коротко поясняй сложные или неоднозначные места.',
+    firstMessages: ['Пришли любой текст — переведу и объясню тонкости. Можешь сразу указать язык, например: «на немецкий».'],
+  },
+  {
+    name: 'Мия', avatar_emoji: '☕',
+    description: 'Собеседница для разговоров обо всём',
+    systemPrompt: 'Ты — {{char}}, живая и любопытная собеседница лет двадцати пяти. Тебе искренне интересен {{user}}: ты задаёшь вопросы, делишься своими мыслями, шутишь. Говори естественно, короткими репликами, как в настоящей переписке. Действия и жесты оформляй звёздочками, например: *улыбается*. Не будь навязчивой и не изображай ассистента.',
+    firstMessages: [
+      '*подсаживается за соседний столик с чашкой кофе* Не занято? ...Ужасная погода, да? Я минут двадцать под дождём шла.',
+      'О, привет! *машет рукой* Слушай, у меня к тебе странный вопрос — ты веришь в то, что люди меняются?',
+    ],
+  },
+  {
+    name: 'English Tutor', avatar_emoji: '🎓',
+    description: 'Репетитор английского: практика и разбор ошибок',
+    systemPrompt: 'You are {{char}}, a patient English tutor. Talk to {{user}} in simple English, matching their level. After each of their messages, gently point out mistakes and show the corrected version. Keep your own replies short so they do most of the talking. If they clearly struggle, switch briefly to their language to explain, then return to English.',
+    firstMessages: ['Hi {{user}}! Let\'s practise a bit. Tell me about your day — don\'t worry about mistakes, I\'ll help you fix them.'],
+  },
+  {
+    name: 'Капитан Рэйк', avatar_emoji: '⚓',
+    description: 'Ролевая игра: пиратское приключение',
+    systemPrompt: 'Ты — {{char}}, старый пиратский капитан с обветренным лицом и тёмным прошлым. Ты ведёшь {{user}} через приключение: описывай мир, реагируй на решения, подкидывай опасности и находки. Говори грубовато, с морским жаргоном. Описания окружения давай короткими яркими абзацами, действия — звёздочками. Никогда не решай за {{user}}, что он делает.',
+    firstMessages: ['*сплёвывает за борт и щурится на горизонт* Значит, ты и есть тот самый новичок. *поворачивается, рука на эфесе* Слушай сюда: карта у меня, корабль у меня, а вот команды не хватает. Что скажешь — идёшь со мной за Сердцем Шторма или проваливай на берег?'],
+  },
+];
+
+function seedStarterCharacters(userId, key) {
+  try {
+    const chars = readJSON(CHARS_FILE);
+    for (const tpl of STARTER_CHARACTERS) {
+      let char = {
+        ...tpl,
+        id: uuidv4(),
+        ownerId: userId,
+        avatar: null,
+        tags: ['starter'],
+        visibility: 'private',
+        createdAt: Date.now(),
+      };
+      if (key) char = encryptCharacter(char, key);
+      chars.push(char);
+    }
+    writeJSON(CHARS_FILE, chars);
+  } catch (e) {
+    console.warn('Не удалось создать стартовых персонажей:', e.message);
+  }
+}
+
 // ─── AUTH ───────────────────────────────────────────────────────────────────
 
 app.post('/api/auth/register', (req, res) => {
-  const { username, password, displayName } = req.body;
+  const username    = String(req.body.username || '').trim();
+  const password    = String(req.body.password || '');
+  const displayName = String(req.body.displayName || '').trim();
+
+  if (username.length < 2)  return res.status(400).json({ error: 'Имя пользователя — минимум 2 символа' });
+  if (username.length > 32) return res.status(400).json({ error: 'Имя пользователя — максимум 32 символа' });
+  if (!/^[a-zA-Z0-9_.-]+$/.test(username))
+    return res.status(400).json({ error: 'В имени можно использовать латиницу, цифры, _ . -' });
+  if (password.length < 4)  return res.status(400).json({ error: 'Пароль — минимум 4 символа' });
+
   const users = readJSON(USERS_FILE);
-  if (users.find(u => u.username === username)) {
-    return res.status(400).json({ error: 'Username already taken' });
+  if (users.find(u => u.username.toLowerCase() === username.toLowerCase())) {
+    return res.status(400).json({ error: 'Это имя уже занято' });
   }
   const user = {
     id: uuidv4(),
@@ -246,7 +533,9 @@ app.post('/api/auth/register', (req, res) => {
   };
   users.push(user);
   writeJSON(USERS_FILE, users);
-  keyStore.set(user.id, deriveKey(password, user.id));
+  const key = deriveKey(password, user.id);
+  keyStore.set(user.id, key);
+  seedStarterCharacters(user.id, key);
   const { password: _, ...safeUser } = user;
   const token = jwt.sign({ id: user.id }, JWT_SECRET, { expiresIn: '90d' });
   res.json({ user: safeUser, token });
@@ -272,6 +561,9 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
+// Deliberately does NOT require the encryption key: the client uses this to tell
+// "token still valid" from "must log in again". It reports the locked state so
+// the app can ask for the password without throwing the session away.
 app.get('/api/auth/me', (req, res) => {
   const userId = verifyToken(req);
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
@@ -279,7 +571,79 @@ app.get('/api/auth/me', (req, res) => {
   const user = users.find(u => u.id === userId);
   if (!user) return res.status(401).json({ error: 'Unauthorized' });
   const { password: _, ...safeUser } = user;
-  res.json(safeUser);
+  res.json({ ...safeUser, locked: !keyStore.has(userId) });
+});
+
+// Re-derive the encryption key after a server restart, keeping the session.
+app.post('/api/auth/unlock', async (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const password = String(req.body.password || '');
+  const users = readJSON(USERS_FILE);
+  const user  = users.find(u => u.id === userId);
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(401).json({ error: 'Неверный пароль' });
+  }
+  keyStore.set(userId, deriveKey(password, userId));
+  const { password: _, ...safeUser } = user;
+  res.json({ user: safeUser });
+});
+
+// Changing the password means changing the encryption key, so everything this
+// user owns has to be re-encrypted in the same operation. Writing the new hash
+// without this step would silently destroy every chat, character and setting.
+app.post('/api/auth/password', async (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const current = String(req.body.current || '');
+  const next    = String(req.body.next || '');
+  if (next.length < 4) return res.status(400).json({ error: 'Новый пароль — минимум 4 символа' });
+
+  const users = readJSON(USERS_FILE);
+  const idx   = users.findIndex(u => u.id === userId);
+  if (idx === -1) return res.status(401).json({ error: 'Unauthorized' });
+  if (!(await bcrypt.compare(current, users[idx].password))) {
+    return res.status(401).json({ error: 'Текущий пароль неверный' });
+  }
+
+  const oldKey = deriveKey(current, userId);
+  const newKey = deriveKey(next, userId);
+
+  try {
+    const chars = readJSON(CHARS_FILE);
+    for (let i = 0; i < chars.length; i++) {
+      if (chars[i].ownerId === userId)
+        chars[i] = encryptCharacter(decryptCharacter(chars[i], oldKey), newKey);
+    }
+    writeJSON(CHARS_FILE, chars);
+
+    const chats = readJSON(CHATS_FILE);
+    for (let i = 0; i < chats.length; i++) {
+      if (chats[i].userId === userId)
+        chats[i] = encryptChat(decryptChat(chats[i], oldKey), newKey);
+    }
+    writeJSON(CHATS_FILE, chats);
+
+    const settings = readJSON(SETTINGS_FILE);
+    if (settings[userId]) {
+      let s = JSON.parse(JSON.stringify(settings[userId]));
+      if (s.providers?.length) s.providers = decryptProviders(s.providers, oldKey);
+      s = decryptSettings(s, oldKey);
+      if (s.providers?.length) s.providers = encryptProviders(s.providers, newKey);
+      settings[userId] = encryptSettings(s, newKey);
+      writeJSON(SETTINGS_FILE, settings);
+    }
+
+    users[idx].password = bcrypt.hashSync(next, 10);
+    writeJSON(USERS_FILE, users);
+    keyStore.set(userId, newKey);
+    flushAll(); // a password change is worth persisting immediately
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Password change failed:', e);
+    res.status(500).json({ error: 'Не удалось сменить пароль, данные не тронуты' });
+  }
 });
 
 app.patch('/api/auth/profile', (req, res) => {
@@ -288,9 +652,23 @@ app.patch('/api/auth/profile', (req, res) => {
   const users = readJSON(USERS_FILE);
   const idx = users.findIndex(u => u.id === userId);
   if (idx === -1) return res.status(401).json({ error: 'Unauthorized' });
+  // Passwords are never changed here — that needs re-encryption, see
+  // POST /api/auth/password. Silently dropping the field used to make the UI
+  // report success while nothing happened.
+  if (req.body.password !== undefined) {
+    return res.status(400).json({ error: 'Пароль меняется отдельно', code: 'USE_PASSWORD_ENDPOINT' });
+  }
   const allowed = ['displayName', 'username', 'bio', 'avatar', 'banner'];
   allowed.forEach(key => {
-    if (req.body[key] !== undefined) users[idx][key] = req.body[key];
+    if (req.body[key] === undefined) return;
+    if (key === 'avatar' || key === 'banner') {
+      const stored = storeAvatar(req.body[key]);
+      if (stored === null) return; // unreadable image, keep the old one
+      if (stored !== users[idx][key]) deleteAvatar(users[idx][key]);
+      users[idx][key] = stored;
+    } else {
+      users[idx][key] = req.body[key];
+    }
   });
   writeJSON(USERS_FILE, users);
   const { password: _, ...safeUser } = users[idx];
@@ -316,10 +694,14 @@ const API_PRESETS = [
 app.get('/api/presets', (req, res) => res.json(API_PRESETS));
 
 app.get('/api/settings', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const settings = readJSON(SETTINGS_FILE);
-  let userSettings = settings[userId] || { providers: [], activeProviderId: null };
+  // Deep copy before decrypting: readJSON now returns the live cached object, so
+  // decrypting in place would put plaintext API keys back into the stored data.
+  let userSettings = settings[userId]
+    ? JSON.parse(JSON.stringify(settings[userId]))
+    : { providers: [], activeProviderId: null };
   const key = keyStore.get(userId);
   if (key) {
     if (userSettings.providers?.length)
@@ -330,8 +712,8 @@ app.get('/api/settings', (req, res) => {
 });
 
 app.post('/api/settings', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const settings = readJSON(SETTINGS_FILE);
   let data = req.body;
   const key = keyStore.get(userId);
@@ -348,7 +730,8 @@ app.post('/api/settings', (req, res) => {
 // ─── CHARACTERS ─────────────────────────────────────────────────────────────
 
 app.get('/api/characters', (req, res) => {
-  const userId = verifyToken(req);
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chars = readJSON(CHARS_FILE);
   const key = keyStore.get(userId);
   const visible = chars.filter(c =>
@@ -360,11 +743,12 @@ app.get('/api/characters', (req, res) => {
 });
 
 app.post('/api/characters', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chars = readJSON(CHARS_FILE);
   let char = {
     ...req.body,
+    avatar: storeAvatar(req.body.avatar) || null,
     id: uuidv4(),
     ownerId: userId,
     createdAt: Date.now(),
@@ -378,13 +762,21 @@ app.post('/api/characters', (req, res) => {
 });
 
 app.put('/api/characters/:id', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chars = readJSON(CHARS_FILE);
   const idx = chars.findIndex(c => c.id === req.params.id && c.ownerId === userId);
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
   const key = keyStore.get(userId);
-  let updated = { ...chars[idx], ...req.body };
+  // Decrypt what is stored before merging: otherwise fields the client did not
+  // send stay encrypted, which breaks the moment the character is made public.
+  const current = key ? decryptCharacter(chars[idx], key) : chars[idx];
+  let updated = { ...current, ...req.body, id: chars[idx].id, ownerId: userId };
+  if (req.body.avatar !== undefined) {
+    const stored = storeAvatar(req.body.avatar);
+    updated.avatar = stored === null ? current.avatar : stored;
+    if (updated.avatar !== current.avatar) deleteAvatar(current.avatar);
+  }
   const plainUpdated = { ...updated };
   if (key) updated = encryptCharacter(updated, key);
   chars[idx] = updated;
@@ -393,19 +785,21 @@ app.put('/api/characters/:id', (req, res) => {
 });
 
 app.delete('/api/characters/:id', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  let chars = readJSON(CHARS_FILE);
-  chars = chars.filter(c => !(c.id === req.params.id && c.ownerId === userId));
-  writeJSON(CHARS_FILE, chars);
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const chars = readJSON(CHARS_FILE);
+  const doomed = chars.find(c => c.id === req.params.id && c.ownerId === userId);
+  if (doomed) deleteAvatar(doomed.avatar); // don't leave orphan files behind
+  writeJSON(CHARS_FILE, chars.filter(c => c !== doomed));
   res.json({ ok: true });
 });
 
 // Import character from PNG — parse metadata AND optionally save to collection
 app.post('/api/characters/import/png', (req, res) => {
-  const userId = verifyToken(req);
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const { base64, save: shouldSave } = req.body;
-  if (shouldSave && !userId) return res.status(401).json({ error: 'Unauthorized' });
+  if (typeof base64 !== 'string' || !base64) return res.status(400).json({ error: 'Нет данных изображения' });
   try {
     const buffer = Buffer.from(base64, 'base64');
 
@@ -466,8 +860,8 @@ app.post('/api/characters/import/png', (req, res) => {
 
     const tags = d.tags || charData.topics || [];
 
-    // Embed the PNG itself as avatar (data URL)
-    const avatarDataUrl = "data:image/png;base64," + base64;
+    // Keep the card art, but on disk rather than inside the JSON.
+    const avatarPath = storeAvatar("data:image/png;base64," + base64);
 
     if (!shouldSave) {
       // Just return parsed data (for form-filling)
@@ -485,7 +879,7 @@ app.post('/api/characters/import/png', (req, res) => {
       firstMessages,
       tags,
       visibility:   'private',
-      avatar:       avatarDataUrl,
+      avatar:       avatarPath,
       avatar_emoji: '✦',
       createdAt:    Date.now(),
     };
@@ -516,16 +910,16 @@ app.post('/api/characters/import/json', (req, res) => {
 // ─── CHATS ───────────────────────────────────────────────────────────────────
 
 app.get('/api/chats', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chats = readJSON(CHATS_FILE);
   const key = keyStore.get(userId);
   res.json(chats.filter(c => c.userId === userId).map(c => key ? decryptChat(c, key) : c));
 });
 
 app.post('/api/chats', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chats = readJSON(CHATS_FILE);
   let chat = {
     id: uuidv4(),
@@ -544,8 +938,8 @@ app.post('/api/chats', (req, res) => {
 });
 
 app.get('/api/chats/:id', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chats = readJSON(CHATS_FILE);
   const chat = chats.find(c => c.id === req.params.id && c.userId === userId);
   if (!chat) return res.status(404).json({ error: 'Not found' });
@@ -554,8 +948,8 @@ app.get('/api/chats/:id', (req, res) => {
 });
 
 app.patch('/api/chats/:id/messages', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   const chats = readJSON(CHATS_FILE);
   const idx = chats.findIndex(c => c.id === req.params.id && c.userId === userId);
   if (idx === -1) return res.status(404).json({ error: 'Not found' });
@@ -576,9 +970,21 @@ app.patch('/api/chats/:id/messages', (req, res) => {
   res.json({ ...chats[idx], messages: plainMessages });
 });
 
+// Deleting every chat one by one meant one full file rewrite per chat, which
+// froze the UI for minutes on a large collection. One call, one write.
+app.delete('/api/chats', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const chats = readJSON(CHATS_FILE);
+  const kept  = chats.filter(c => c.userId !== userId);
+  const removed = chats.length - kept.length;
+  writeJSON(CHATS_FILE, kept);
+  res.json({ ok: true, removed });
+});
+
 app.delete('/api/chats/:id', (req, res) => {
-  const userId = verifyToken(req);
-  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+  const userId = requireUser(req, res);
+  if (!userId) return;
   let chats = readJSON(CHATS_FILE);
   chats = chats.filter(c => !(c.id === req.params.id && c.userId === userId));
   writeJSON(CHATS_FILE, chats);
@@ -587,11 +993,109 @@ app.delete('/api/chats/:id', (req, res) => {
 
 // ─── AI PROXY (Stream) ───────────────────────────────────────────────────────
 
+// Anthropic speaks a different dialect: POST /v1/messages, an x-api-key header,
+// a separate `system` field and its own SSE event shape. The old code sent every
+// provider to /chat/completions with a Bearer token, so the built-in "Anthropic"
+// preset could never work — it just produced a confusing error.
+const isAnthropic = (host) => /(^|\.)anthropic\.com$/i.test(host);
+
+function buildUpstream({ provider, host, model, messages, systemPrompt, temperature, max_tokens, top_p }) {
+  const base   = provider.baseUrl.replace(/\/+$/, '');
+  const tokens = typeof max_tokens === 'number' ? Math.min(max_tokens, 16384) : 2048;
+
+  if (isAnthropic(host)) {
+    const body = {
+      model: model || 'claude-sonnet-5',
+      max_tokens: tokens,                       // required by Anthropic
+      messages: messages.filter(m => m.role !== 'system'),
+      stream: true,
+    };
+    if (systemPrompt) body.system = systemPrompt;
+    if (typeof temperature === 'number') body.temperature = Math.min(temperature, 1); // caps at 1
+    if (typeof top_p === 'number') body.top_p = top_p;
+    return {
+      url: `${base}/messages`,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': provider.apiKey,
+        'anthropic-version': '2023-06-01',
+        ...(provider.extraHeaders || {}),
+      },
+      body,
+      dialect: 'anthropic',
+    };
+  }
+
+  const body = {
+    model: model || 'gpt-4o-mini',
+    messages: systemPrompt ? [{ role: 'system', content: systemPrompt }, ...messages] : messages,
+    stream: true,
+    max_tokens: tokens,
+  };
+  if (typeof temperature === 'number') body.temperature = temperature;
+  if (typeof top_p === 'number') body.top_p = top_p;
+  return {
+    url: `${base}/chat/completions`,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${provider.apiKey}`,
+      ...(provider.extraHeaders || {}),
+    },
+    body,
+    dialect: 'openai',
+  };
+}
+
+// Re-emit Anthropic's SSE as OpenAI-shaped chunks so the browser parser, and
+// every other consumer, stays dialect-agnostic.
+function anthropicToOpenAI(buffer, write) {
+  let rest = buffer;
+  let nl;
+  while ((nl = rest.indexOf('\n')) !== -1) {
+    const line = rest.slice(0, nl).trim();
+    rest = rest.slice(nl + 1);
+    if (!line.startsWith('data:')) continue;
+    const raw = line.slice(5).trim();
+    if (!raw || raw === '[DONE]') continue;
+    try {
+      const ev = JSON.parse(raw);
+      if (ev.type === 'content_block_delta' && ev.delta?.text) {
+        write(`data: ${JSON.stringify({ choices: [{ delta: { content: ev.delta.text } }] })}\n\n`);
+      } else if (ev.type === 'message_stop') {
+        write('data: [DONE]\n\n');
+      } else if (ev.type === 'error') {
+        write(`data: ${JSON.stringify({ error: ev.error?.message || 'Ошибка Anthropic' })}\n\n`);
+      }
+    } catch {}
+  }
+  return rest;
+}
+
 app.post('/api/chat/stream', async (req, res) => {
+  // This used to be completely unauthenticated while the server listens on
+  // 0.0.0.0, which let anyone on the network use it as an open proxy to any URL.
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
   const { messages, provider, model, systemPrompt, temperature, max_tokens, top_p } = req.body;
 
-  if (!provider || !provider.baseUrl || !provider.apiKey) {
-    return res.status(400).json({ error: 'Provider not configured' });
+  if (!provider || !provider.baseUrl) {
+    return res.status(400).json({ error: 'Провайдер не настроен', code: 'NO_PROVIDER' });
+  }
+  if (!Array.isArray(messages)) {
+    return res.status(400).json({ error: 'messages must be an array' });
+  }
+
+  let target;
+  try { target = new URL(provider.baseUrl); }
+  catch { return res.status(400).json({ error: 'Некорректный адрес сервиса (Base URL)', code: 'BAD_URL' }); }
+  if (!/^https?:$/.test(target.protocol)) {
+    return res.status(400).json({ error: 'Base URL должен начинаться с http:// или https://', code: 'BAD_URL' });
+  }
+  // Local model servers (Ollama, LM Studio) legitimately have no key.
+  const isLocal = /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/i.test(target.hostname);
+  if (!provider.apiKey && !isLocal) {
+    return res.status(400).json({ error: 'Не указан API-ключ', code: 'NO_KEY' });
   }
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -599,53 +1103,132 @@ app.post('/api/chat/stream', async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
 
   let aborted = false;
-  req.on('close', () => { aborted = true; });
+  let upstream = null;
+  req.on('close', () => {
+    aborted = true;
+    try { upstream?.body?.destroy(); } catch {}
+  });
 
   try {
     const fetch = require('node-fetch');
-    const payload = {
-      model: model || 'gpt-4o-mini',
-      messages: systemPrompt
-        ? [{ role: 'system', content: systemPrompt }, ...messages]
-        : messages,
-      stream: true,
-    };
-    // Forward client model params (with sane defaults)
-    if (typeof temperature === 'number') payload.temperature = temperature;
-    if (typeof max_tokens  === 'number') payload.max_tokens  = Math.min(max_tokens, 16384);
-    else payload.max_tokens = 2048;
-    if (typeof top_p === 'number') payload.top_p = top_p;
-
-    const response = await fetch(`${provider.baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${provider.apiKey}`,
-        ...(provider.extraHeaders || {})
-      },
-      body: JSON.stringify(payload)
+    const spec = buildUpstream({
+      provider, host: target.hostname, model, messages, systemPrompt, temperature, max_tokens, top_p,
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      res.write(`data: ${JSON.stringify({ error: errText })}\n\n`);
+    upstream = await fetch(spec.url, {
+      method: 'POST',
+      headers: spec.headers,
+      body: JSON.stringify(spec.body),
+    });
+
+    if (!upstream.ok) {
+      const errText = await upstream.text();
+      // Pass the status through so the client can say something human
+      // ("key is wrong", "out of credit") instead of dumping raw JSON.
+      res.write(`data: ${JSON.stringify({ error: errText, status: upstream.status })}\n\n`);
       res.end();
       return;
     }
 
-    response.body.on('data', chunk => {
-      if (!aborted) res.write(chunk);
-    });
-    response.body.on('end', () => { if (!aborted) res.end(); });
-    response.body.on('error', () => { if (!aborted) res.end(); });
-    // Abort upstream when client disconnects
-    req.on('close', () => { try { response.body.destroy(); } catch {} });
+    if (spec.dialect === 'anthropic') {
+      let buf = '';
+      upstream.body.on('data', chunk => {
+        if (aborted) return;
+        buf += chunk.toString('utf8');
+        buf = anthropicToOpenAI(buf, s => res.write(s));
+      });
+    } else {
+      upstream.body.on('data', chunk => { if (!aborted) res.write(chunk); });
+    }
+    upstream.body.on('end',   () => { if (!aborted) res.end(); });
+    upstream.body.on('error', () => { if (!aborted) res.end(); });
 
   } catch (e) {
     if (!aborted) {
-      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      const code = e.code === 'ECONNREFUSED' ? 'CONN_REFUSED'
+                 : /ENOTFOUND|EAI_AGAIN/.test(e.code || '') ? 'NO_NETWORK' : null;
+      res.write(`data: ${JSON.stringify({ error: e.message, code })}\n\n`);
       res.end();
     }
+  }
+});
+
+// ── CONNECTION TEST ─────────────────────────────────────────────────────────
+// Lets the setup wizard tell the user "your key works" before they discover it
+// doesn't by sending a message to a character and getting a raw API error.
+app.post('/api/provider/test', async (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { baseUrl, apiKey, model } = req.body || {};
+  let target;
+  try { target = new URL(String(baseUrl || '')); }
+  catch { return res.json({ ok: false, code: 'BAD_URL', error: 'Некорректный адрес сервиса' }); }
+  if (!/^https?:$/.test(target.protocol)) {
+    return res.json({ ok: false, code: 'BAD_URL', error: 'Адрес должен начинаться с http:// или https://' });
+  }
+
+  const started = Date.now();
+  try {
+    const fetch = require('node-fetch');
+    const spec = buildUpstream({
+      provider: { baseUrl, apiKey }, host: target.hostname, model,
+      messages: [{ role: 'user', content: 'Hi' }],
+      systemPrompt: '', temperature: 0, max_tokens: 8, top_p: 1,
+    });
+    spec.body.stream = false;
+
+    const r = await fetch(spec.url, {
+      method: 'POST', headers: spec.headers, body: JSON.stringify(spec.body),
+    });
+    const text = await r.text();
+
+    if (r.ok) return res.json({ ok: true, ms: Date.now() - started, model: spec.body.model });
+    return res.json({ ok: false, status: r.status, error: text.slice(0, 400) });
+  } catch (e) {
+    const code = e.code === 'ECONNREFUSED' ? 'CONN_REFUSED'
+               : /ENOTFOUND|EAI_AGAIN/.test(e.code || '') ? 'NO_NETWORK' : null;
+    return res.json({ ok: false, code, error: e.message });
+  }
+});
+
+// ── MODEL LIST ──────────────────────────────────────────────────────────────
+// The browser used to call the provider's /models directly, which most of them
+// block by CORS — so the button silently fell back to a hardcoded 2024 list and
+// leaked the API key straight out of the page. Go through the server instead.
+app.post('/api/models', async (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { baseUrl, apiKey } = req.body || {};
+  let target;
+  try { target = new URL(String(baseUrl || '')); }
+  catch { return res.status(400).json({ error: 'Некорректный адрес сервиса' }); }
+  if (!/^https?:$/.test(target.protocol)) {
+    return res.status(400).json({ error: 'Некорректный адрес сервиса' });
+  }
+
+  const base = String(baseUrl).replace(/\/+$/, '');
+  const headers = isAnthropic(target.hostname)
+    ? { 'x-api-key': apiKey || '', 'anthropic-version': '2023-06-01' }
+    : { 'Authorization': `Bearer ${apiKey || ''}` };
+
+  try {
+    const result = await proxyFetch(`${base}/models`, { headers });
+    if (result.status !== 200) {
+      return res.status(result.status).json({ error: `Сервис вернул ${result.status}`, models: [] });
+    }
+    const data = JSON.parse(result.body);
+    let models = [];
+    if (Array.isArray(data))             models = data;
+    else if (Array.isArray(data.data))   models = data.data;
+    else if (Array.isArray(data.models)) models = data.models;
+    models = models
+      .map(m => (typeof m === 'string' ? m : (m.id || m.name || '')))
+      .filter(Boolean);
+    res.json({ models });
+  } catch (e) {
+    res.status(500).json({ error: e.message, models: [] });
   }
 });
 
@@ -655,6 +1238,19 @@ app.post('/api/chat/stream', async (req, res) => {
 
 const https = require('https');
 const http  = require('http');
+const os    = require('os');
+
+// Every non-internal IPv4 address, so the app can show a "open this on your
+// phone" address instead of telling a beginner to run ipconfig.
+function lanAddresses() {
+  const out = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const net of list || []) {
+      if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+    }
+  }
+  return out;
+}
 
 function proxyFetch(url, options = {}) {
   return new Promise((resolve, reject) => {
@@ -682,6 +1278,11 @@ function proxyFetch(url, options = {}) {
         body:    Buffer.concat(chunks).toString('utf8'),
         headers: res.headers,
       }));
+    });
+    // Without this, probing a local port that nothing answers on hangs until the
+    // OS gives up, which would stall the "is Ollama running?" check on startup.
+    req.setTimeout(options.timeout || 15000, () => {
+      req.destroy(new Error('timeout'));
     });
     req.on('error', reject);
     if (options.body) req.write(options.body);
@@ -770,6 +1371,8 @@ app.get('/api/chub/avatar', async (req, res) => {
 // ─── SEARCH ─────────────────────────────────────────────────────────────────
 
 app.get('/api/search', (req, res) => {
+  // Used to be open: anyone reaching the port could enumerate every account.
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
   const q = (req.query.q || '').toLowerCase().trim();
   if (!q) return res.json({ users: [], chars: [] });
   const users = readJSON(USERS_FILE)
@@ -785,6 +1388,7 @@ app.get('/api/search', (req, res) => {
 // ─── USER PROFILES ───────────────────────────────────────────────────────────
 
 app.get('/api/users/:username', (req, res) => {
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
   const users = readJSON(USERS_FILE);
   const user = users.find(u => u.username === req.params.username);
   if (!user) return res.status(404).json({ error: 'Not found' });
@@ -856,6 +1460,7 @@ const requireAdmin = (req, res) => {
 app.post('/api/admin/restart', (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json({ ok: true, message: 'Restarting server...' });
+  flushAll(); // never restart on top of unflushed writes
   setTimeout(() => {
     const { spawn } = require('child_process');
     const child = spawn(process.argv[0], process.argv.slice(1), {
@@ -867,6 +1472,134 @@ app.post('/api/admin/restart', (req, res) => {
     child.unref();
     process.exit(0);
   }, 500);
+});
+
+// ─── LOCAL MODEL SERVERS ────────────────────────────────────────────────────
+// A newcomer with no API key and no idea what one is can still be up and running
+// in one click if Ollama or LM Studio is already installed. Look for them.
+const LOCAL_SERVERS = [
+  { id: 'ollama',   name: 'Ollama',    baseUrl: 'http://localhost:11434/v1', icon: '🦙' },
+  { id: 'lmstudio', name: 'LM Studio', baseUrl: 'http://localhost:1234/v1',  icon: '🎨' },
+];
+
+app.get('/api/local/detect', async (req, res) => {
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
+  const found = [];
+  await Promise.all(LOCAL_SERVERS.map(async srv => {
+    try {
+      const r = await proxyFetch(`${srv.baseUrl}/models`, { timeout: 1200 });
+      if (r.status !== 200) return;
+      const data = JSON.parse(r.body);
+      const list = (data.data || data.models || [])
+        .map(m => (typeof m === 'string' ? m : (m.id || m.name || '')))
+        .filter(Boolean);
+      found.push({ ...srv, models: list });
+    } catch {}
+  }));
+  res.json({ found });
+});
+
+// ─── BACKUP / RESTORE ───────────────────────────────────────────────────────
+// "Экспорт данных" used to write only the settings — with the API keys in the
+// clear and no way to import them back. This is the real thing.
+app.get('/api/backup', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const withKeys = req.query.keys === '1';
+  const key = keyStore.get(userId);
+
+  // Avatars are inlined so the backup file is self-contained and can be moved
+  // to another machine on its own.
+  const chars = readJSON(CHARS_FILE)
+    .filter(c => c.ownerId === userId)
+    .map(c => ({ ...decryptCharacter(c, key), avatar: inlineAvatar(c.avatar) }));
+  const chats = readJSON(CHATS_FILE)
+    .filter(c => c.userId === userId)
+    .map(c => ({ ...decryptChat(c, key), characterAvatar: inlineAvatar(c.characterAvatar) }));
+
+  const allSettings = readJSON(SETTINGS_FILE);
+  let settings = allSettings[userId] ? JSON.parse(JSON.stringify(allSettings[userId])) : {};
+  if (key) {
+    if (settings.providers?.length) settings.providers = decryptProviders(settings.providers, key);
+    settings = decryptSettings(settings, key);
+  }
+  if (!withKeys && settings.providers) {
+    settings.providers = settings.providers.map(p => ({ ...p, apiKey: '' }));
+  }
+
+  res.json({
+    format: 'wesaid-backup', version: 1, exportedAt: Date.now(),
+    containsApiKeys: withKeys, characters: chars, chats, settings,
+  });
+});
+
+app.post('/api/restore', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const backup = req.body || {};
+  if (backup.format !== 'wesaid-backup') {
+    return res.status(400).json({ error: 'Это не файл резервной копии wesaid' });
+  }
+  const key = keyStore.get(userId);
+  const stats = { characters: 0, chats: 0, settings: false };
+
+  try {
+    if (Array.isArray(backup.characters) && backup.characters.length) {
+      const chars = readJSON(CHARS_FILE);
+      const existing = new Set(chars.filter(c => c.ownerId === userId).map(c => c.id));
+      for (const c of backup.characters) {
+        if (!c?.name || existing.has(c.id)) continue; // never clobber what is already here
+        chars.push(encryptCharacter({
+          ...c, id: c.id || uuidv4(), ownerId: userId, avatar: storeAvatar(c.avatar) || null,
+        }, key));
+        stats.characters++;
+      }
+      writeJSON(CHARS_FILE, chars);
+    }
+
+    if (Array.isArray(backup.chats) && backup.chats.length) {
+      const chats = readJSON(CHATS_FILE);
+      const existing = new Set(chats.filter(c => c.userId === userId).map(c => c.id));
+      for (const c of backup.chats) {
+        if (!c?.id || existing.has(c.id)) continue;
+        chats.push(encryptChat({
+          ...c, userId, characterAvatar: storeAvatar(c.characterAvatar) || null,
+        }, key));
+        stats.chats++;
+      }
+      writeJSON(CHATS_FILE, chats);
+    }
+
+    if (backup.settings && typeof backup.settings === 'object') {
+      const all = readJSON(SETTINGS_FILE);
+      let s = JSON.parse(JSON.stringify(backup.settings));
+      // A backup made without keys must not wipe the keys already configured.
+      const currentProviders = all[userId]?.providers || [];
+      if (s.providers?.length) {
+        s.providers = s.providers.map(p => {
+          if (p.apiKey) return p;
+          const known = currentProviders.find(x => x.id === p.id);
+          return known ? { ...p, apiKey: known.apiKey } : p;
+        });
+        s.providers = encryptProviders(s.providers, key);
+      }
+      all[userId] = encryptSettings(s, key);
+      writeJSON(SETTINGS_FILE, all);
+      stats.settings = true;
+    }
+
+    flushAll();
+    res.json({ ok: true, ...stats });
+  } catch (e) {
+    console.error('Restore failed:', e);
+    res.status(500).json({ error: 'Не удалось восстановить: ' + e.message });
+  }
+});
+
+// ─── NETWORK INFO (for the phone QR code) ───────────────────────────────────
+app.get('/api/netinfo', (req, res) => {
+  if (!verifyToken(req)) return res.status(401).json({ error: 'Unauthorized' });
+  res.json({ port: ACTIVE_PORT, addresses: lanAddresses().map(ip => `http://${ip}:${ACTIVE_PORT}`) });
 });
 
 // ─── TRANSLATE ───────────────────────────────────────────────────────────────
@@ -902,12 +1635,60 @@ app.post('/api/translate', async (req, res) => {
   }
 });
 
+// Unknown API routes must not fall through to the SPA — the client then tried to
+// JSON.parse an HTML page and reported "Unexpected token <" instead of a 404.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: `Неизвестный запрос: ${req.method} /api${req.path}` });
+});
+
 // Serve SPA for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🟠 wesaid running at http://localhost:${PORT}`);
-  console.log(`📡 Network access via Tailscale also available\n`);
-});
+// ─── START ───────────────────────────────────────────────────────────────────
+// A busy port used to print a raw Node stack trace into a black window, which
+// tells a first-time user nothing. Try the next few ports, then explain.
+function start(port, attemptsLeft = 10) {
+  const server = app.listen(port, '0.0.0.0', () => {
+    ACTIVE_PORT = port;
+    const lan = lanAddresses();
+    console.log('');
+    console.log('  ┌─────────────────────────────────────────────┐');
+    console.log('  │  wesaid запущен                             │');
+    console.log('  └─────────────────────────────────────────────┘');
+    console.log('');
+    console.log(`  На этом компьютере:  http://localhost:${port}`);
+    if (lan.length) {
+      console.log(`  С телефона (та же сеть):  http://${lan[0]}:${port}`);
+      console.log('  (QR-код для телефона есть в Настройках)');
+    }
+    console.log('');
+    console.log('  Чтобы остановить — закройте это окно или нажмите Ctrl+C');
+    console.log('');
+  });
+
+  server.on('error', (e) => {
+    if (e.code === 'EADDRINUSE') {
+      if (attemptsLeft > 0) {
+        console.log(`  Порт ${port} занят, пробую ${port + 1}…`);
+        return start(port + 1, attemptsLeft - 1);
+      }
+      console.error('');
+      console.error('  ❌ Не удалось занять ни один порт.');
+      console.error('');
+      console.error('  Скорее всего wesaid уже запущен в другом окне.');
+      console.error('  Проверьте панель задач, либо перезагрузите компьютер и попробуйте снова.');
+      console.error('');
+    } else if (e.code === 'EACCES') {
+      console.error(`\n  ❌ Нет прав на порт ${port}. Попробуйте порт больше 1024.\n`);
+    } else {
+      console.error('\n  ❌ Не удалось запустить сервер:', e.message, '\n');
+    }
+    process.exit(1);
+  });
+}
+
+let ACTIVE_PORT = PORT;
+migrateEmbeddedAvatars();
+start(PORT);

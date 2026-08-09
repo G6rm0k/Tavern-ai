@@ -1,75 +1,170 @@
 // ─── i18n - Internationalization ──────────────────────────────────────────────
+// Large parts of the UI used to be hardcoded: the auth screen in English, the
+// settings, discover and account screens in Russian. Switching language produced
+// a mix of the two. Everything user-facing lives here now.
+
 const STRINGS = {
   ru: {
     // Auth
     'auth.login': 'Войти', 'auth.register': 'Создать аккаунт',
     'auth.username': 'Имя пользователя', 'auth.password': 'Пароль',
-    'auth.displayName': 'Отображаемое имя', 'auth.local': 'Только локально — данные хранятся на вашем ПК 🔒',
-    'auth.signing': 'Входим...', 'auth.creating': 'Создаём...', 'auth.tagline': 'Ваше личное пространство для чатов',
+    'auth.displayName': 'Как тебя называть', 'auth.local': 'Всё хранится на этом компьютере 🔒',
+    'auth.signing': 'Входим…', 'auth.creating': 'Создаём…', 'auth.tagline': 'Личное пространство для чатов',
+    'auth.fill': 'Заполни оба поля',
+    'auth.pwWarn': 'Запомни пароль! Им шифруются твои переписки — восстановить его невозможно.',
+    'auth.usernameHint': 'Латиница, цифры, _ . -',
+
     // Nav
     'nav.home': 'Главная', 'nav.discover': 'Открыть', 'nav.create': 'Создать', 'nav.account': 'Профиль', 'nav.settings': 'Настройки',
+
     // Home
-    'home.welcome': 'С возвращением', 'home.subtitle': 'Продолжите или начните новый диалог',
-    'home.new': 'Новый персонаж', 'home.recent': 'Недавние чаты',
+    'home.welcome': 'С возвращением', 'home.subtitle': 'Продолжи или начни новый диалог',
+    'home.new': 'Новый персонаж', 'home.recent': 'Недавние чаты', 'home.mine': 'Мои персонажи',
+    'stat.characters': 'персонажей', 'stat.chats': 'чатов', 'stat.messages': 'сообщений',
+
     // Characters
     'char.create': 'Новый персонаж', 'char.edit': 'Редактировать персонажа',
     'char.name': 'Имя *', 'char.desc': 'Краткое описание', 'char.system': 'Системный промпт',
     'char.greetings': 'Первые сообщения', 'char.greetings.hint': 'Одно из них выбирается случайно при старте чата. До 50 штук.',
     'char.addGreeting': '+ Добавить приветствие', 'char.visibility': 'Видимость',
     'char.private': 'Приватный', 'char.public': 'Публичный',
-    'char.private.desc': 'Только вы', 'char.public.desc': 'Видят все',
+    'char.private.desc': 'Только ты', 'char.public.desc': 'Видят все',
     'char.import': 'Импорт', 'char.import.hint': 'PNG карточки Chub.ai или JSON',
     'char.save': 'Сохранить', 'char.cancel': 'Отмена', 'char.delete': 'Удалить',
     'char.avatar': 'Загрузить', 'char.avatar.hint': 'PNG/JPG или эмодзи',
-    'char.system.hint': 'Описание характера. {{char}} = имя персонажа, {{user}} = ваше имя',
-    'char.empty': 'Нет персонажей', 'char.empty.hint': 'Создайте первого или импортируйте с Chub.ai',
+    'char.system.hint': 'Описание характера. {{char}} = имя персонажа, {{user}} = твоё имя',
+    'char.empty': 'Нет персонажей', 'char.empty.hint': 'Создай первого или импортируй с Chub.ai',
+    'char.noDesc': 'Без описания',
+
     // Chat
     'chat.clear': 'Очистить чат', 'chat.delete': 'Удалить чат',
-    'chat.input': 'Сообщение...', 'chat.hint': 'Enter — отправить · Shift+Enter — новая строка',
+    'chat.input': 'Сообщение…', 'chat.hint': 'Enter — отправить · Shift+Enter — новая строка',
     'chat.online': '● В сети', 'chat.copy': 'Копировать', 'chat.regen': 'Перегенерировать',
-    'chat.edit': 'Редактировать', 'chat.no.provider': 'Нет провайдера. Перейдите в Настройки.',
-    'chat.empty': 'Выберите персонажа', 'chat.empty.sub': 'и начните разговор',
+    'chat.edit': 'Редактировать', 'chat.no.provider': 'Сервис не подключён — зайди в Настройки',
+    'chat.no.provider.short': 'нет сервиса',
+    'chat.empty': 'Выбери персонажа', 'chat.empty.sub': 'и начни разговор',
+    'chat.none': 'Пока нет чатов', 'chat.tokens': 'токенов', 'chat.stop': 'Остановить',
+    'chat.gone': 'Чат не найден',
+    'chat.regen.nothing': 'Нечего перегенерировать — сначала напиши сообщение',
+    'chat.restored': 'Восстановлено',
+
     // Settings
-    'settings.title': 'Настройки', 'settings.providers': 'API Провайдеры', 'settings.model': 'Параметры модели',
+    'settings.title': 'Настройки', 'settings.providers': 'Сервисы', 'settings.model': 'Параметры модели',
     'settings.appearance': 'Внешний вид', 'settings.language': 'Язык', 'settings.app': 'Приложение',
-    'settings.add.provider': '+ Добавить провайдер', 'settings.no.providers': 'Провайдеры не настроены',
+    'settings.add.provider': 'Добавить сервис', 'settings.no.providers': 'Сервисы не подключены',
     'settings.theme': 'Тема', 'settings.theme.dark': 'Тёмная', 'settings.theme.light': 'Светлая',
-    'settings.accent': 'Акцентный цвет', 'settings.autoscroll': 'Автопрокрутка',
-    'settings.autoscroll.desc': 'Прокручивать вниз при новых сообщениях',
-    'settings.animations': 'Анимации', 'settings.animations.desc': 'Анимация сообщений и переходов',
-    'settings.sound': 'Звуки', 'settings.sound.desc': 'Звук при получении сообщения',
+    'settings.accent': 'Цвет акцента', 'settings.accent.hint': 'Нажми на круг',
+    'settings.autoscroll': 'Автопрокрутка', 'settings.autoscroll.desc': 'Прокручивать вниз к новым сообщениям',
+    'settings.animations': 'Анимации', 'settings.animations.desc': 'Плавные переходы',
+    'settings.animSpeed': 'Скорость', 'settings.sound': 'Звуки', 'settings.sound.desc': 'Звук при получении сообщения',
+    'settings.fontSize': 'Размер текста', 'settings.fontSize.desc': 'В сообщениях чата',
+    'settings.advanced': 'Продвинутые настройки', 'settings.advanced.hint': 'Можно не трогать',
+    'settings.instructions': 'Общие инструкции для всех персонажей',
+    'settings.instructions.ph': 'Например: отвечай только на русском языке.',
+    'settings.data': 'Данные', 'settings.backup': 'Скачать резервную копию',
+    'settings.backup.keys': 'Включить API-ключи в копию',
+    'settings.backup.warn': 'С ключами файл нельзя никому пересылать',
+    'settings.restore': 'Восстановить из файла',
+    'settings.clearChats': 'Удалить все чаты', 'settings.reset': 'Сбросить настройки',
+    'settings.phone': 'Открыть на телефоне', 'settings.phone.desc': 'Наведи камеру на код',
+    'settings.phone.same': 'Телефон должен быть в той же Wi-Fi сети',
+    'settings.autolock': 'Автоблокировка', 'settings.autolock.desc': 'Выходить при бездействии',
+    'settings.autolock.off': 'Выкл',
+    'settings.security': 'Безопасность',
+
     // Model params
-    'param.temperature': 'Температура', 'param.temperature.low': 'Точно', 'param.temperature.high': 'Творчески',
-    'param.maxTokens': 'Макс. токенов', 'param.maxTokens.hint': 'Длина ответа',
-    'param.topP': 'Top P', 'param.topK': 'Top K',
-    'param.context': 'Контекст (сообщений)', 'param.context.hint': 'Сколько сообщений помнит',
-    'param.preset.creative': 'Творческий', 'param.preset.balanced': 'Сбалансированный', 'param.preset.precise': 'Точный',
-    'param.global.system': 'Глобальный системный промпт',
-    'param.global.system.hint': 'Добавляется ко всем персонажам поверх их системника',
+    'param.temperature': 'Температура', 'param.temperature.hint': 'Ниже — отвечает чётко и по делу. Выше — фантазирует и удивляет.',
+    'param.maxTokens': 'Длина ответа', 'param.maxTokens.hint': 'Максимальный размер одного ответа.',
+    'param.topP': 'Top P', 'param.topP.hint': 'Из какой доли вероятных слов выбирать. Обычно не трогают.',
+    'param.topK': 'Top K', 'param.topK.hint': 'Сколько вариантов слов рассматривать. Обычно не трогают.',
+    'param.context': 'Память', 'param.context.hint': 'Сколько последних сообщений персонаж помнит.',
+    'param.preset.creative': 'Творческий', 'param.preset.balanced': 'Баланс', 'param.preset.precise': 'Точный',
+
     // Discover
     'discover.title': 'Открыть персонажей', 'discover.subtitle': 'Все доступные персонажи',
+
     // Profile
-    'profile.edit': 'Редактировать профиль', 'profile.displayName': 'Отображаемое имя',
+    'profile.edit': 'Редактировать', 'profile.displayName': 'Отображаемое имя',
     'profile.username': 'Имя пользователя', 'profile.bio': 'О себе',
-    'profile.password': 'Новый пароль', 'profile.save': 'Сохранить',
+    'profile.password': 'Пароль', 'profile.save': 'Сохранить',
     'profile.logout': 'Выйти', 'profile.banner': 'Сменить баннер', 'profile.avatar': 'Сменить аватар',
+    'profile.changePassword': 'Сменить пароль',
+    'profile.pwNotice': 'Пароль — это ключ шифрования. При смене все твои чаты и персонажи будут перешифрованы, это может занять несколько секунд.',
+    'profile.pwCurrent': 'Текущий пароль', 'profile.pwNew': 'Новый пароль', 'profile.pwRepeat': 'Повтори новый',
+    'profile.pwFill': 'Заполни все поля', 'profile.pwMismatch': 'Пароли не совпадают',
+    'profile.pwShort': 'Минимум 4 символа', 'profile.pwChanged': 'Пароль изменён',
+
+    // Unlock
+    'unlock.title': 'Сессия заблокирована', 'unlock.btn': 'Разблокировать',
+    'unlock.desc': 'Сервер перезапустился, и ключ шифрования нужно ввести заново. Твои данные на месте — введи пароль, чтобы их открыть.',
+    'unlock.ok': 'Готово!',
+    'lock.warn': 'Через минуту произойдёт автоматический выход',
+
+    // Admin
+    'admin.title': 'Админ-панель', 'admin.restart': 'Перезапустить сервер',
+
     // Toast
-    'toast.saved': 'Сохранено!', 'toast.deleted': 'Удалено', 'toast.copied': 'Скопировано!',
-    'toast.imported': 'Импортировано!', 'toast.error': 'Ошибка',
-    // Setup
-    'setup.title': 'Настройка', 'setup.subtitle': 'Подключите сервис для начала работы',
-    'setup.name': 'Название', 'setup.url': 'Base URL', 'setup.key': 'API Ключ',
-    'setup.model': 'Модель', 'setup.save': 'Сохранить и продолжить →',
-    'setup.skip': 'Пропустить',
+    'toast.saved': 'Сохранено', 'toast.deleted': 'Удалено', 'toast.copied': 'Скопировано',
+    'toast.imported': 'Импортировано', 'toast.error': 'Ошибка',
+
+    // Setup / wizard
+    'setup.name': 'Название', 'setup.url': 'Адрес сервиса (Base URL)', 'setup.key': 'API-ключ',
+    'setup.model': 'Модель', 'setup.save': 'Сохранить и продолжить', 'setup.skip': 'Пропустить',
+    'wiz.title': 'Осталось подключить ИИ', 'wiz.subtitle': 'Выбери, как тебе удобнее. Это займёт пару минут.',
+    'wiz.recommended': 'Проще всего',
+    'wiz.back': 'Назад',
+    'wiz.free.name': 'Бесплатно, через интернет',
+    'wiz.free.desc': 'Регистрация на сайте, бесплатные модели. Ничего платить не нужно.',
+    'wiz.free.sub': 'Через OpenRouter — там есть бесплатные модели',
+    'wiz.free.s1': 'Открой',
+    'wiz.free.s2': 'Войди через Google или почту',
+    'wiz.free.s3': 'Нажми «Create Key» и придумай любое название',
+    'wiz.free.s4': 'Скопируй ключ целиком и вставь его сюда',
+    'wiz.free.modelHint': 'С пометкой «бесплатно» деньги не списываются',
+    'wiz.model.free': 'бесплатно', 'wiz.model.paid': 'платно',
+    'wiz.local.name': 'Бесплатно, на своём компьютере',
+    'wiz.local.desc': 'Ничего не уходит в интернет. Нужен мощный ПК.',
+    'wiz.local.sub': 'Ищу Ollama и LM Studio на этом компьютере',
+    'wiz.local.scanning': 'Ищу…',
+    'wiz.local.none': 'На компьютере не найдено ни Ollama, ни LM Studio.',
+    'wiz.local.i1': 'Скачай Ollama:',
+    'wiz.local.i2': 'Установи и запусти её',
+    'wiz.local.i3': 'В окне Ollama скачай любую модель, например llama3.2',
+    'wiz.local.rescan': 'Поискать снова',
+    'wiz.local.models': 'моделей: %s', 'wiz.local.nomodels': 'модели не скачаны',
+    'wiz.local.connect': 'Подключить',
+    'wiz.local.pullHint': 'Сначала скачай модель в самом приложении',
+    'wiz.own.name': 'У меня уже есть ключ',
+    'wiz.own.desc': 'Если ты знаешь, что такое API-ключ.',
+    'wiz.own.sub': 'Выбери сервис или впиши адрес вручную',
+    'wiz.own.pick': 'Сервис',
+    'wiz.found': 'Найдено: %s — подключить в один клик',
+    'wiz.test': 'Проверить', 'wiz.testing': 'Проверяю связь…',
+    'wiz.test.ok': 'Всё работает! Ответ за %s сек',
+    'wiz.saveGo': 'Сохранить и начать',
+    'wiz.done': 'Готово! Можно общаться',
+    'wiz.err.noUrl': 'Не указан адрес сервиса',
+    'wiz.skip': 'Пропустить и осмотреться',
+    'wiz.skip.title': 'Без сервиса чат не заработает',
+    'wiz.skip.body': 'Ты сможешь ходить по приложению и создавать персонажей, но отправить сообщение не получится, пока не подключишь сервис. Это всегда можно сделать в Настройках.',
+    'wiz.skip.back': 'Вернуться', 'wiz.skip.go': 'Всё равно пропустить',
   },
+
   en: {
     'auth.login': 'Sign In', 'auth.register': 'Create Account',
     'auth.username': 'Username', 'auth.password': 'Password',
-    'auth.displayName': 'Display Name', 'auth.local': 'Local only — data stays on your PC 🔒',
-    'auth.signing': 'Signing in...', 'auth.creating': 'Creating...', 'auth.tagline': 'Your private chat space',
+    'auth.displayName': 'Display Name', 'auth.local': 'Everything stays on this computer 🔒',
+    'auth.signing': 'Signing in…', 'auth.creating': 'Creating…', 'auth.tagline': 'Your private chat space',
+    'auth.fill': 'Please fill in both fields',
+    'auth.pwWarn': 'Remember this password! It encrypts your chats and cannot be recovered.',
+    'auth.usernameHint': 'Latin letters, digits, _ . -',
+
     'nav.home': 'Home', 'nav.discover': 'Discover', 'nav.create': 'Create', 'nav.account': 'Account', 'nav.settings': 'Settings',
+
     'home.welcome': 'Welcome back', 'home.subtitle': 'Pick up where you left off or start fresh',
-    'home.new': 'New Character', 'home.recent': 'Recent Chats',
+    'home.new': 'New Character', 'home.recent': 'Recent Chats', 'home.mine': 'My Characters',
+    'stat.characters': 'characters', 'stat.chats': 'chats', 'stat.messages': 'messages',
+
     'char.create': 'New Character', 'char.edit': 'Edit Character',
     'char.name': 'Name *', 'char.desc': 'Short description', 'char.system': 'System Prompt',
     'char.greetings': 'First Messages', 'char.greetings.hint': 'One is randomly chosen when starting a chat. Up to 50.',
@@ -81,53 +176,132 @@ const STRINGS = {
     'char.avatar': 'Upload', 'char.avatar.hint': 'PNG/JPG or emoji',
     'char.system.hint': 'Personality definition. {{char}} = character name, {{user}} = your name',
     'char.empty': 'No characters yet', 'char.empty.hint': 'Create your first or import from Chub.ai',
+    'char.noDesc': 'No description',
+
     'chat.clear': 'Clear chat', 'chat.delete': 'Delete chat',
-    'chat.input': 'Message...', 'chat.hint': 'Enter to send · Shift+Enter for new line',
+    'chat.input': 'Message…', 'chat.hint': 'Enter to send · Shift+Enter for new line',
     'chat.online': '● Online', 'chat.copy': 'Copy', 'chat.regen': 'Regenerate',
-    'chat.edit': 'Edit', 'chat.no.provider': 'No provider configured. Go to Settings.',
+    'chat.edit': 'Edit', 'chat.no.provider': 'No service connected — open Settings',
+    'chat.no.provider.short': 'no service',
     'chat.empty': 'Select a character', 'chat.empty.sub': 'to start chatting',
-    'settings.title': 'Settings', 'settings.providers': 'API Providers', 'settings.model': 'Model Parameters',
+    'chat.none': 'No chats yet', 'chat.tokens': 'tokens', 'chat.stop': 'Stop',
+    'chat.gone': 'Chat not found',
+    'chat.regen.nothing': 'Nothing to regenerate — write a message first',
+    'chat.restored': 'Restored',
+
+    'settings.title': 'Settings', 'settings.providers': 'Services', 'settings.model': 'Model Parameters',
     'settings.appearance': 'Appearance', 'settings.language': 'Language', 'settings.app': 'App',
-    'settings.add.provider': '+ Add Provider', 'settings.no.providers': 'No providers configured',
+    'settings.add.provider': 'Add service', 'settings.no.providers': 'No services connected',
     'settings.theme': 'Theme', 'settings.theme.dark': 'Dark', 'settings.theme.light': 'Light',
-    'settings.accent': 'Accent Color', 'settings.autoscroll': 'Auto-scroll',
-    'settings.autoscroll.desc': 'Scroll down on new messages',
-    'settings.animations': 'Animations', 'settings.animations.desc': 'Message and transition animations',
-    'settings.sound': 'Sounds', 'settings.sound.desc': 'Sound on incoming message',
-    'param.temperature': 'Temperature', 'param.temperature.low': 'Precise', 'param.temperature.high': 'Creative',
-    'param.maxTokens': 'Max Tokens', 'param.maxTokens.hint': 'Response length',
-    'param.topP': 'Top P', 'param.topK': 'Top K',
-    'param.context': 'Context (messages)', 'param.context.hint': 'How many messages it remembers',
+    'settings.accent': 'Accent colour', 'settings.accent.hint': 'Tap the circle',
+    'settings.autoscroll': 'Auto-scroll', 'settings.autoscroll.desc': 'Scroll down on new messages',
+    'settings.animations': 'Animations', 'settings.animations.desc': 'Smooth transitions',
+    'settings.animSpeed': 'Speed', 'settings.sound': 'Sounds', 'settings.sound.desc': 'Sound on incoming message',
+    'settings.fontSize': 'Text size', 'settings.fontSize.desc': 'In chat messages',
+    'settings.advanced': 'Advanced settings', 'settings.advanced.hint': 'Safe to ignore',
+    'settings.instructions': 'Global instructions for every character',
+    'settings.instructions.ph': 'For example: always answer in English.',
+    'settings.data': 'Data', 'settings.backup': 'Download backup',
+    'settings.backup.keys': 'Include API keys in the backup',
+    'settings.backup.warn': 'A file with keys must not be shared with anyone',
+    'settings.restore': 'Restore from file',
+    'settings.clearChats': 'Delete all chats', 'settings.reset': 'Reset settings',
+    'settings.phone': 'Open on your phone', 'settings.phone.desc': 'Point your camera at the code',
+    'settings.phone.same': 'The phone must be on the same Wi-Fi network',
+    'settings.autolock': 'Auto-lock', 'settings.autolock.desc': 'Sign out when idle',
+    'settings.autolock.off': 'Off',
+    'settings.security': 'Security',
+
+    'param.temperature': 'Temperature', 'param.temperature.hint': 'Lower — focused and to the point. Higher — imaginative and surprising.',
+    'param.maxTokens': 'Reply length', 'param.maxTokens.hint': 'Maximum size of a single reply.',
+    'param.topP': 'Top P', 'param.topP.hint': 'How much of the likely vocabulary to draw from. Usually left alone.',
+    'param.topK': 'Top K', 'param.topK.hint': 'How many word candidates to consider. Usually left alone.',
+    'param.context': 'Memory', 'param.context.hint': 'How many recent messages the character remembers.',
     'param.preset.creative': 'Creative', 'param.preset.balanced': 'Balanced', 'param.preset.precise': 'Precise',
-    'param.global.system': 'Global System Prompt',
-    'param.global.system.hint': 'Added on top of every character\'s system prompt',
+
     'discover.title': 'Discover Characters', 'discover.subtitle': 'All available characters',
-    'profile.edit': 'Edit Profile', 'profile.displayName': 'Display Name',
+
+    'profile.edit': 'Edit', 'profile.displayName': 'Display Name',
     'profile.username': 'Username', 'profile.bio': 'Bio',
-    'profile.password': 'New Password', 'profile.save': 'Save',
+    'profile.password': 'Password', 'profile.save': 'Save',
     'profile.logout': 'Sign Out', 'profile.banner': 'Change Banner', 'profile.avatar': 'Change Avatar',
-    'toast.saved': 'Saved!', 'toast.deleted': 'Deleted', 'toast.copied': 'Copied!',
-    'toast.imported': 'Imported!', 'toast.error': 'Error',
-    'setup.title': 'Setup', 'setup.subtitle': 'Connect a service to get started',
-    'setup.name': 'Name', 'setup.url': 'Base URL', 'setup.key': 'API Key',
-    'setup.model': 'Model', 'setup.save': 'Save & Continue →',
-    'setup.skip': 'Skip for now',
+    'profile.changePassword': 'Change password',
+    'profile.pwNotice': 'Your password is the encryption key. Changing it re-encrypts every chat and character, which can take a few seconds.',
+    'profile.pwCurrent': 'Current password', 'profile.pwNew': 'New password', 'profile.pwRepeat': 'Repeat new password',
+    'profile.pwFill': 'Fill in every field', 'profile.pwMismatch': 'Passwords do not match',
+    'profile.pwShort': 'At least 4 characters', 'profile.pwChanged': 'Password changed',
+
+    'unlock.title': 'Session locked', 'unlock.btn': 'Unlock',
+    'unlock.desc': 'The server restarted and the encryption key has to be entered again. Your data is safe — type your password to open it.',
+    'unlock.ok': 'Done!',
+    'lock.warn': 'You will be signed out in a minute',
+
+    'admin.title': 'Admin panel', 'admin.restart': 'Restart server',
+
+    'toast.saved': 'Saved', 'toast.deleted': 'Deleted', 'toast.copied': 'Copied',
+    'toast.imported': 'Imported', 'toast.error': 'Error',
+
+    'setup.name': 'Name', 'setup.url': 'Service address (Base URL)', 'setup.key': 'API key',
+    'setup.model': 'Model', 'setup.save': 'Save & continue', 'setup.skip': 'Skip for now',
+    'wiz.title': 'One last step: connect an AI', 'wiz.subtitle': 'Pick whichever suits you. Takes a couple of minutes.',
+    'wiz.recommended': 'Easiest',
+    'wiz.back': 'Back',
+    'wiz.free.name': 'Free, over the internet',
+    'wiz.free.desc': 'Sign up on a website, use free models. Nothing to pay.',
+    'wiz.free.sub': 'Through OpenRouter — it offers free models',
+    'wiz.free.s1': 'Open',
+    'wiz.free.s2': 'Sign in with Google or email',
+    'wiz.free.s3': 'Press "Create Key" and give it any name',
+    'wiz.free.s4': 'Copy the whole key and paste it here',
+    'wiz.free.modelHint': 'Models marked "free" never charge you',
+    'wiz.model.free': 'free', 'wiz.model.paid': 'paid',
+    'wiz.local.name': 'Free, on your own computer',
+    'wiz.local.desc': 'Nothing leaves your machine. Needs a powerful PC.',
+    'wiz.local.sub': 'Looking for Ollama and LM Studio on this computer',
+    'wiz.local.scanning': 'Looking…',
+    'wiz.local.none': 'Neither Ollama nor LM Studio was found on this computer.',
+    'wiz.local.i1': 'Download Ollama:',
+    'wiz.local.i2': 'Install it and start it',
+    'wiz.local.i3': 'In Ollama, download any model, for example llama3.2',
+    'wiz.local.rescan': 'Look again',
+    'wiz.local.models': '%s models', 'wiz.local.nomodels': 'no models downloaded',
+    'wiz.local.connect': 'Connect',
+    'wiz.local.pullHint': 'Download a model in the app first',
+    'wiz.own.name': 'I already have a key',
+    'wiz.own.desc': 'If you know what an API key is.',
+    'wiz.own.sub': 'Pick a service or type the address yourself',
+    'wiz.own.pick': 'Service',
+    'wiz.found': 'Found %s — connect in one click',
+    'wiz.test': 'Test', 'wiz.testing': 'Testing the connection…',
+    'wiz.test.ok': 'It works! Answered in %s sec',
+    'wiz.saveGo': 'Save & start',
+    'wiz.done': 'All set — go ahead and chat',
+    'wiz.err.noUrl': 'No service address given',
+    'wiz.skip': 'Skip and look around',
+    'wiz.skip.title': 'Chat will not work without a service',
+    'wiz.skip.body': 'You can browse the app and create characters, but sending a message will fail until a service is connected. You can always do it later in Settings.',
+    'wiz.skip.back': 'Go back', 'wiz.skip.go': 'Skip anyway',
   }
 };
 
 const i18n = {
-  lang: localStorage.getItem('wesaid_lang') || localStorage.getItem('tavern_lang') || 'ru',
+  // Follow the system language on first run instead of always starting Russian.
+  lang: localStorage.getItem('wesaid_lang')
+     || localStorage.getItem('tavern_lang')
+     || ((navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en'),
 
   t(key) {
-    return STRINGS[this.lang]?.[key] || STRINGS['en']?.[key] || key;
+    return STRINGS[this.lang]?.[key] ?? STRINGS['en']?.[key] ?? key;
   },
 
   setLang(lang) {
+    const changed = this.lang !== lang;
     this.lang = lang;
     localStorage.setItem('wesaid_lang', lang);
     document.documentElement.lang = lang;
-    // Dispatch event to re-render
-    window.dispatchEvent(new CustomEvent('langChange'));
+    // Only tell the app to re-render when something actually changed; this runs
+    // on every settings load, including during login.
+    if (changed) window.dispatchEvent(new CustomEvent('langChange'));
   }
 };
 

@@ -1,0 +1,19 @@
+{
+  "name": "wesaid",
+  "short_name": "wesaid",
+  "description": "Локальный чат с ИИ-персонажами",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06060a",
+  "theme_color": "#06060a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

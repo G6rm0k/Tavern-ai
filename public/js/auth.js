@@ -19,25 +19,25 @@ const Auth = {
     el.innerHTML = `
       <div class="auth-container">
         <div class="auth-logo">wesaid</div>
-        <div class="auth-tagline">Your private chat space</div>
+        <div class="auth-tagline">${t('auth.tagline')}</div>
 
         <div class="auth-card">
           <div class="auth-tabs">
-            <button class="auth-tab active" data-tab="login">Sign In</button>
-            <button class="auth-tab" data-tab="register">Create Account</button>
+            <button class="auth-tab active" data-tab="login">${t('auth.login')}</button>
+            <button class="auth-tab" data-tab="register">${t('auth.register')}</button>
           </div>
 
           <div id="auth-login">
             <div class="form-group">
-              <label>Username</label>
+              <label>${t('auth.username')}</label>
               <input id="login-username" type="text" placeholder="your_username" autocomplete="username" />
             </div>
             <div class="form-group">
-              <label>Password</label>
+              <label>${t('auth.password')}</label>
               <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password" />
             </div>
             <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="login-btn">
-              Sign In
+              ${t('auth.login')}
             </button>
             <div id="login-error" class="text-muted mt-2" style="color:#ef4444;display:none"></div>
           </div>
@@ -45,26 +45,30 @@ const Auth = {
           <div id="auth-register" class="hidden">
             <div class="form-row">
               <div class="form-group">
-                <label>Username</label>
+                <label>${t('auth.username')}</label>
                 <input id="reg-username" type="text" placeholder="cool_username" autocomplete="username" />
+                <div class="hint">${t('auth.usernameHint')}</div>
               </div>
               <div class="form-group">
-                <label>Display Name</label>
+                <label>${t('auth.displayName')}</label>
                 <input id="reg-displayname" type="text" placeholder="Your Name" />
               </div>
             </div>
             <div class="form-group">
-              <label>Password</label>
+              <label>${t('auth.password')}</label>
               <input id="reg-password" type="password" placeholder="••••••••" autocomplete="new-password" />
             </div>
+            <!-- The password is the encryption key. Losing it means losing every
+                 chat, so say so before the account exists, not after. -->
+            <div class="notice notice-warn">⚠️ ${t('auth.pwWarn')}</div>
             <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px" id="register-btn">
-              Create Account
+              ${t('auth.register')}
             </button>
             <div id="reg-error" class="text-muted mt-2" style="color:#ef4444;display:none"></div>
           </div>
         </div>
         <div class="text-muted mt-2" style="text-align:center;font-size:12px">
-          Local only — your data stays on this machine 🔒
+          ${t('auth.local')}
         </div>
       </div>
     `;
@@ -102,12 +106,12 @@ const Auth = {
     errEl.style.display = 'none';
 
     if (!username || !password) {
-      errEl.textContent = 'Please fill in all fields';
+      errEl.textContent = t('auth.fill');
       errEl.style.display = 'block'; return;
     }
 
     const btn = document.getElementById('login-btn');
-    btn.textContent = 'Signing in...'; btn.disabled = true;
+    btn.textContent = t('auth.signing'); btn.disabled = true;
     try {
       const { user, token } = await API.login({ username, password });
       API.setToken(token);
@@ -116,7 +120,7 @@ const Auth = {
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = 'block';
-      btn.textContent = 'Sign In'; btn.disabled = false;
+      btn.textContent = t('auth.login'); btn.disabled = false;
     }
   },
 
@@ -128,12 +132,12 @@ const Auth = {
     errEl.style.display = 'none';
 
     if (!username || !password) {
-      errEl.textContent = 'Username and password required';
+      errEl.textContent = t('auth.fill');
       errEl.style.display = 'block'; return;
     }
 
     const btn = document.getElementById('register-btn');
-    btn.textContent = 'Creating...'; btn.disabled = true;
+    btn.textContent = t('auth.creating'); btn.disabled = true;
     try {
       const { user, token } = await API.register({ username, displayName, password });
       API.setToken(token);
@@ -142,7 +146,7 @@ const Auth = {
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = 'block';
-      btn.textContent = 'Create Account'; btn.disabled = false;
+      btn.textContent = t('auth.register'); btn.disabled = false;
     }
   }
 };

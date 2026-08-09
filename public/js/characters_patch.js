@@ -2,9 +2,7 @@
 // NOTE: define local helper — do NOT try to reuse const escHtml from characters.js
 // (accessing it here via typeof causes a Temporal Dead Zone ReferenceError that
 //  would silently prevent this entire file from executing).
-function _patchEsc(s) {
-  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
+function _patchEsc(s) { return esc(s); }
 
 Characters.renderList = function(container, chars) {
   if (!chars || !chars.length) {
@@ -13,19 +11,19 @@ Characters.renderList = function(container, chars) {
   }
   container.innerHTML = chars.map(c => {
     const av = c.avatar
-      ? `<img src="${c.avatar}" onerror="this.parentElement.textContent='✦'" />`
-      : `<span>${c.avatar_emoji || '✦'}</span>`;
-    return `<div class="char-card" data-id="${c.id}">
+      ? `<img src="${escAttr(c.avatar)}" onerror="this.parentElement.textContent='✦'" />`
+      : `<span>${esc(c.avatar_emoji || '✦')}</span>`;
+    return `<div class="char-card" data-id="${escAttr(c.id)}">
       <div class="char-card-av">${av}</div>
       <div class="char-card-body">
         <div class="char-card-name">${_patchEsc(c.name)}</div>
-        <div class="char-card-desc">${_patchEsc(c.description) || 'No description'}</div>
+        <div class="char-card-desc">${_patchEsc(c.description) || t('char.noDesc')}</div>
       </div>
       <div class="char-card-actions" onclick="event.stopPropagation()">
-        <button class="btn-icon" onclick="Characters.editChar('${c.id}')" style="color:var(--t3)">
+        <button class="btn-icon" onclick="Characters.editChar('${escJs(c.id)}')" style="color:var(--t3)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
         </button>
-        <button class="btn-icon" onclick="Characters.deleteChar('${c.id}')" style="color:var(--red)">
+        <button class="btn-icon" onclick="Characters.deleteChar('${escJs(c.id)}')" style="color:var(--red)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
         </button>
       </div>

@@ -2,12 +2,14 @@
 <html lang="ru" data-theme="dark" data-accent="orange">
 <head>
   <meta charset="UTF-8" />
-  <!-- CRITICAL: disable all zoom, proper safe areas -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- Zoom is allowed on purpose: blocking it locked out anyone who needs to
+       enlarge the text. Layout shifts are handled in CSS instead. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="wesaid" />
   <meta name="theme-color" content="#06060a" />
+  <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
   <title>wesaid</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -33,6 +35,8 @@
     <div class="loader-ring"></div>
   </div>
 
+  <script src="/js/util.js"></script>
+  <script src="/js/qr.js"></script>
   <script src="/js/i18n.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/fx.js"></script>
@@ -40,6 +44,7 @@
   <script src="/js/auth.js"></script>
   <script src="/js/modelloader.js"></script>
   <script src="/js/settings.js"></script>
+  <script src="/js/wizard.js"></script>
   <script src="/js/translator.js"></script>
   <script src="/js/charwizard.js"></script>
   <script src="/js/characters.js"></script>
@@ -47,5 +52,14 @@
   <script src="/js/characters_patch.js"></script>
   <script src="/js/chat.js"></script>
   <script src="/js/app.js"></script>
+  <script>
+    // Installable from the phone's browser, so it gets a home-screen icon and
+    // runs without the address bar.
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
