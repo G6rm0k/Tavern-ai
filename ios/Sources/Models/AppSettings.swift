@@ -111,6 +111,31 @@ struct Persona: Codable, Hashable {
     }
 }
 
+/// Small on/off switches that live under `"app"` on disk in the web version
+/// (`settings.data.app`). Only `memory` is needed so far — the rest of that
+/// bag (theme, sound, animations…) belongs to the appearance screen in a
+/// later phase, and gets added to this same struct then rather than a new
+/// top-level key, since that's the shape the file already has on disk.
+struct AppPreferences: Codable, Hashable {
+    /// Whether the chat compresses conversation overflow into a running
+    /// summary. Off by default, same as the web version — nothing in
+    /// `STARTER_CHARACTERS`-style defaults ever turns this on for the user.
+    var memoryEnabled: Bool
+
+    init(memoryEnabled: Bool = false) {
+        self.memoryEnabled = memoryEnabled
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case memoryEnabled = "memory"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        memoryEnabled = (try? c.decode(Bool.self, forKey: .memoryEnabled)) ?? false
+    }
+}
+
 struct AppSettings: Codable, Hashable {
     var providers: [Provider]
     var activeProviderId: String?
@@ -119,23 +144,27 @@ struct AppSettings: Codable, Hashable {
     /// Off by default: a lock the user never asked for, on an app they just
     /// installed, reads as a malfunction rather than a feature.
     var requireBiometrics: Bool
+    var preferences: AppPreferences
 
     init(providers: [Provider] = [],
          activeProviderId: String? = nil,
          modelParams: ModelParams = ModelParams(),
          persona: Persona = Persona(),
-         requireBiometrics: Bool = false) {
+         requireBiometrics: Bool = false,
+         preferences: AppPreferences = AppPreferences()) {
         self.providers = providers
         self.activeProviderId = activeProviderId
         self.modelParams = modelParams
         self.persona = persona
         self.requireBiometrics = requireBiometrics
+        self.preferences = preferences
     }
 
     enum CodingKeys: String, CodingKey {
         case providers, activeProviderId, persona, requireBiometrics
         // "mp" is what the web version calls this object on disk.
         case modelParams = "mp"
+        case preferences = "app"
     }
 
     init(from decoder: Decoder) throws {
@@ -145,6 +174,7 @@ struct AppSettings: Codable, Hashable {
         modelParams       = (try? c.decode(ModelParams.self, forKey: .modelParams)) ?? ModelParams()
         persona           = (try? c.decode(Persona.self, forKey: .persona)) ?? Persona()
         requireBiometrics = (try? c.decode(Bool.self, forKey: .requireBiometrics)) ?? false
+        preferences       = (try? c.decode(AppPreferences.self, forKey: .preferences)) ?? AppPreferences()
     }
 
     var activeProvider: Provider? {

@@ -1,27 +1,24 @@
 import SwiftUI
 
-// Phase 1 skeleton: proves the whole pipeline (XcodeGen → xcodebuild archive →
-// unsigned .ipa → sideload via AltStore/SideStore) end to end before any real
-// feature code is written. Nothing else should be built on top of this until
-// a human confirms it actually launches on their phone.
 @main
 struct wesaidApp: App {
+    @StateObject private var stores = AppStores()
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            NavigationStack {
+                HomeView()
+            }
+            .environmentObject(stores.characters)
+            .environmentObject(stores.chats)
+            .environmentObject(stores.settings)
         }
-    }
-}
-
-struct ContentView: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Text("✦").font(.system(size: 48))
-            Text("wesaid").font(.system(size: 28, weight: .bold, design: .rounded))
-            Text("Пайплайн собрался и запустился.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+        // iOS can suspend or terminate the app with no notice once it leaves
+        // the foreground — unlike the desktop version, there is no SIGTERM to
+        // catch a debounced write on. Flushing here is the equivalent gate.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { stores.flushAll() }
         }
-        .padding()
     }
 }

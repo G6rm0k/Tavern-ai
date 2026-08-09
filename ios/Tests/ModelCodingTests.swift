@@ -55,9 +55,18 @@ final class ModelCodingTests: XCTestCase {
             activeProviderId: "p1",
             modelParams: ModelParams(temperature: 1.1, maxTokens: 700, topP: 0.8, topK: 33, contextMessages: 25, globalSystem: "Отвечай кратко"),
             persona: Persona(name: "Гера", description: "Любит море"),
-            requireBiometrics: true
+            requireBiometrics: true,
+            preferences: AppPreferences(memoryEnabled: true)
         )
         XCTAssertEqual(try roundTrip(settings), settings)
+    }
+
+    /// The web version stores this under `settings.app.memory` — a nested
+    /// object, not a top-level key. Getting the `CodingKeys` wrong here would
+    /// silently decode `preferences` to its default on every load.
+    func testAppSettingsPreferencesUsesNestedAppKeyOnDisk() throws {
+        let json = String(decoding: try StoreCoding.encoder.encode(AppSettings(preferences: AppPreferences(memoryEnabled: true))), as: UTF8.self)
+        XCTAssertTrue(json.contains(#""app":{"memory":true}"#), json)
     }
 
     // MARK: - Tolerating older / foreign files
@@ -93,6 +102,7 @@ final class ModelCodingTests: XCTestCase {
         XCTAssertNil(settings.activeProviderId)
         XCTAssertEqual(settings.modelParams, ModelParams())
         XCTAssertFalse(settings.requireBiometrics, "biometrics must be opt-in")
+        XCTAssertFalse(settings.preferences.memoryEnabled, "memory summarisation must be opt-in")
     }
 
     /// Cards exported by other clients carry roles we do not know. Dropping the
