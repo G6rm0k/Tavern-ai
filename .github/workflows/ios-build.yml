@@ -51,6 +51,30 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # A simulator's first boot is slow enough that the test host app has
+      # occasionally crashed on launch mid-suite and needed xcodebuild's own
+      # crash-recovery to finish — every retry after that first cold boot ran
+      # fine in under a second per test. Booting explicitly and blocking on
+      # `bootstatus` here means `xcodebuild test` never has to absorb that
+      # cold start itself.
+      - name: Boot Simulator
+        run: |
+          # Every "iPhone 16" across every installed runtime, not just one —
+          # xcodebuild's own destination resolution (no OS version pinned)
+          # isn't guaranteed to land on the same one a single guess would.
+          xcrun simctl list devices available -j \
+            | python3 -c "
+          import json, sys
+          for runtime in json.load(sys.stdin)['devices'].values():
+              for dev in runtime:
+                  if dev['name'] == 'iPhone 16':
+                      print(dev['udid'])
+          " | while read -r UDID; do
+              echo "Booting simulator $UDID"
+              xcrun simctl boot "$UDID" || true
+              xcrun simctl bootstatus "$UDID" -b || true
+            done
+
       - name: Run unit tests
         run: |
           xcodebuild test \
