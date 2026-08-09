@@ -4,7 +4,16 @@ import XCTest
 /// Exercises the locking *decisions* through a fake authenticator — the real
 /// `LAContextAuthenticator` needs biometric hardware this project's toolchain
 /// never has access to (no simulator, no device, until a sideload).
-@MainActor
+///
+/// Every test here is `async`, even the ones with no real suspension point,
+/// and the class itself is deliberately *not* `@MainActor` — `AppLockController`
+/// is `@MainActor`-isolated, so touching it needs `await` regardless. Mixing
+/// synchronous and asynchronous test methods inside one `@MainActor`-annotated
+/// `XCTestCase` crashed the test host outright on CI (`Test crashed with
+/// signal trap`, reproducing at the exact same sync-test-after-async-test
+/// boundary on every run) — XCTest's synchronous-test invocation path doesn't
+/// hop actors the way its `async` test path does. Keeping every method on the
+/// same (async) invocation path sidesteps that instability entirely.
 final class AppLockControllerTests: XCTestCase {
 
     private final class StubAuthenticator: BiometricAuthenticating {
@@ -29,64 +38,72 @@ final class AppLockControllerTests: XCTestCase {
         return store
     }
 
-    func testStartsUnlockedWhenLockIsOff() {
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false),
-                                            authenticator: StubAuthenticator())
-        XCTAssertTrue(controller.isUnlocked)
-        XCTAssertFalse(controller.isLockEnabled)
+    func testStartsUnlockedWhenLockIsOff() async {
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false),
+                                                   authenticator: StubAuthenticator())
+        let isUnlocked = await controller.isUnlocked
+        let isLockEnabled = await controller.isLockEnabled
+        XCTAssertTrue(isUnlocked)
+        XCTAssertFalse(isLockEnabled)
     }
 
-    func testStartsLockedWhenLockIsOn() {
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true),
-                                            authenticator: StubAuthenticator())
-        XCTAssertFalse(controller.isUnlocked)
+    func testStartsLockedWhenLockIsOn() async {
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true),
+                                                   authenticator: StubAuthenticator())
+        let isUnlocked = await controller.isUnlocked
+        XCTAssertFalse(isUnlocked)
     }
 
-    func testLockIsANoOpWhenTheSettingIsOff() {
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false),
-                                            authenticator: StubAuthenticator())
-        controller.lock()
-        XCTAssertTrue(controller.isUnlocked, "must never show a lock screen nobody turned on")
+    func testLockIsANoOpWhenTheSettingIsOff() async {
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false),
+                                                   authenticator: StubAuthenticator())
+        await controller.lock()
+        let isUnlocked = await controller.isUnlocked
+        XCTAssertTrue(isUnlocked, "must never show a lock screen nobody turned on")
     }
 
     func testUnlockSucceedsWhenTheAuthenticatorApproves() async {
         let auth = StubAuthenticator()
         auth.result = true
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
         await controller.unlock()
-        XCTAssertTrue(controller.isUnlocked)
+        let isUnlocked = await controller.isUnlocked
+        XCTAssertTrue(isUnlocked)
         XCTAssertEqual(auth.callCount, 1)
     }
 
     func testUnlockStaysLockedWhenTheAuthenticatorDenies() async {
         let auth = StubAuthenticator()
         auth.result = false
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
         await controller.unlock()
-        XCTAssertFalse(controller.isUnlocked)
+        let isUnlocked = await controller.isUnlocked
+        XCTAssertFalse(isUnlocked)
     }
 
     func testLockAfterUnlockRequiresAuthenticatingAgain() async {
         let auth = StubAuthenticator()
         auth.result = true
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
         await controller.unlock()
-        XCTAssertTrue(controller.isUnlocked)
+        let isUnlockedAfterUnlock = await controller.isUnlocked
+        XCTAssertTrue(isUnlockedAfterUnlock)
 
-        controller.lock()
-        XCTAssertFalse(controller.isUnlocked)
+        await controller.lock()
+        let isUnlockedAfterLock = await controller.isUnlocked
+        XCTAssertFalse(isUnlockedAfterLock)
     }
 
     func testUnlockWhenLockIsDisabledNeverTouchesTheAuthenticator() async {
         let auth = StubAuthenticator()
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false), authenticator: auth)
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: false), authenticator: auth)
         await controller.unlock()
         XCTAssertEqual(auth.callCount, 0, "lock disabled must never prompt")
     }
 
     func testUnlockWhenAlreadyUnlockedDoesNotReauthenticate() async {
         let auth = StubAuthenticator()
-        let controller = AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
+        let controller = await AppLockController(settingsStore: makeSettingsStore(requireBiometrics: true), authenticator: auth)
         await controller.unlock()
         XCTAssertEqual(auth.callCount, 1)
 
