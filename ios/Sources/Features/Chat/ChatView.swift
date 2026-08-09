@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct ChatView: View {
+    @EnvironmentObject private var characters: CharacterStore
     @StateObject private var controller: ChatController
     @FocusState private var inputFocused: Bool
+    @State private var showingProfile = false
 
     init(controller: ChatController) {
         _controller = StateObject(wrappedValue: controller)
@@ -14,13 +16,50 @@ struct ChatView: View {
             inputBar
         }
         .background(WesaidTheme.background)
-        .navigationTitle(controller.chat.displayTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(WesaidTheme.background, for: .navigationBar)
+        .toolbar {
+            // Tapping either the name or the avatar opens the character's
+            // full profile — same destination, two familiar targets.
+            ToolbarItem(placement: .principal) {
+                Button {
+                    showingProfile = true
+                } label: {
+                    Text(controller.chat.characterName)
+                        .font(.subheadline.bold())
+                        .foregroundStyle(WesaidTheme.text1)
+                        .lineLimit(1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(WesaidTheme.surface, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingProfile = true
+                } label: {
+                    avatarView
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        // A blurred material bar, not a flat fill: the standard iOS way for
+        // a bar to read as "over the content" rather than a hard-edged block
+        // sitting on top of it — messages are visibly, softly present through
+        // it while scrolling, same idea as Messages.app's own nav bar.
+        .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         // Matches the web version's `.mob-nav.nav-hidden`: the bottom nav
         // disappears entirely once you're inside a conversation, so the
         // keyboard and input bar get the full screen.
         .toolbar(.hidden, for: .tabBar)
+        .sheet(isPresented: $showingProfile) {
+            if let character = controller.character {
+                CharacterEditorView(editing: character)
+            } else {
+                deletedCharacterNotice
+            }
+        }
         // Regenerating a reply that has messages after it abandons that
         // branch — mirrors the confirm() the web version shows.
         .alert("Дальнейшие сообщения будут удалены", isPresented: Binding(
@@ -30,6 +69,38 @@ struct ChatView: View {
             Button("Отмена", role: .cancel) { controller.cancelRegenerateTruncation() }
             Button("Перегенерировать", role: .destructive) { controller.confirmRegenerateTruncation() }
         }
+    }
+
+    private var avatarView: some View {
+        Group {
+            if let fileName = controller.chat.characterAvatar, let url = characters.avatars.url(for: fileName) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        Text(controller.chat.characterAvatarEmoji).font(.system(size: 14))
+                    }
+                }
+            } else {
+                Text(controller.chat.characterAvatarEmoji).font(.system(size: 14))
+            }
+        }
+        .frame(width: 32, height: 32)
+        .background(WesaidTheme.surface2, in: Circle())
+        .clipShape(Circle())
+    }
+
+    private var deletedCharacterNotice: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 40))
+                .foregroundStyle(WesaidTheme.text3)
+            Text("Персонаж удалён")
+                .font(.headline)
+                .foregroundStyle(WesaidTheme.text1)
+        }
+        .padding(40)
+        .presentationDetents([.height(180)])
     }
 
     /// `{{char}}`/`{{user}}` are placeholders meant to be substituted
@@ -122,7 +193,11 @@ struct ChatView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(WesaidTheme.background2)
+        // Extending the fill past the bottom safe area (rather than stopping
+        // exactly at it) is what makes this read as flush against the
+        // keyboard's own rounded top edge instead of a flat bar with a
+        // visible seam where the two don't quite meet.
+        .background(WesaidTheme.background2.ignoresSafeArea(edges: .bottom))
     }
 
     /// Forces the model to reason step by step before its final answer, for

@@ -48,7 +48,12 @@ final class ChatController: ObservableObject {
         self.forceThinking = settingsStore.settings.preferences.forceThinkingByDefault
     }
 
-    private var character: CharacterCard? {
+    /// The live character, looked up fresh every access — not the chat's own
+    /// name/avatar snapshot. `nil` once the character has been deleted, which
+    /// the chat itself survives (see `characterName`/`characterAvatar` on
+    /// `ChatSession`). Exposed (not `private`) so the chat screen's profile
+    /// sheet can open the same character for full editing.
+    var character: CharacterCard? {
         characterStore.character(id: chat.characterId)
     }
 
