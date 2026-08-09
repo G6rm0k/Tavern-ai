@@ -156,6 +156,24 @@ const Settings = {
         <button class="sv-save" onclick="Settings.saveMP()">${t('char.save')}</button>
       </div>
 
+      <!-- Persona: who {{user}} is. Without it the character talks to a blank. -->
+      <div class="sv-card">
+        <div class="sv-title">🎭 ${t('persona.title')}</div>
+        <div class="hint" style="margin-bottom:10px">${t('persona.hint')}</div>
+        <div class="form-group">
+          <label>${t('persona.name')}</label>
+          <input id="sv-persona-name" value="${escAttr(this.data.persona?.name || '')}"
+            placeholder="${escAttr(App.user?.displayName || '')}" />
+        </div>
+        <div class="form-group">
+          <label>${t('persona.desc')}</label>
+          <textarea id="sv-persona-desc" class="sv-textarea" rows="3"
+            placeholder="${escAttr(t('persona.ph'))}">${esc(this.data.persona?.description || '')}</textarea>
+        </div>
+        ${this._tog('memory', '🧠 ' + t('memory.title'), t('memory.desc'), !!a.memory)}
+        <button class="sv-save" onclick="Settings.savePersona()">${t('char.save')}</button>
+      </div>
+
       <!-- Appearance -->
       <div class="sv-card">
         <div class="sv-title">◈ ${t('settings.appearance')}</div>
@@ -394,6 +412,15 @@ const Settings = {
   async setLang(v)   { this.data.language   = v; i18n.setLang(v); await this.save(); App.navigate('settings'); },
 
   _advOpen: false,
+
+  async savePersona() {
+    this.data.persona = {
+      name:        document.getElementById('sv-persona-name').value.trim(),
+      description: document.getElementById('sv-persona-desc').value.trim(),
+    };
+    await this.save();
+    toast(t('toast.saved'), 'success');
+  },
 
   // ── PASSKEY ────────────────────────────────────────────────────────────────
   async _renderPasskey() {

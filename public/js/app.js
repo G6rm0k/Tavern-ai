@@ -187,7 +187,7 @@ const App = {
       return `<button class="chat-row" data-cid="${escAttr(c.id)}" onclick="Chat.load('${escJs(c.id)}')">
         <div class="chat-av">${av}</div>
         <div class="chat-info">
-          <div class="chat-name">${esc(c.characterName)}</div>
+          <div class="chat-name">${esc(c.title || c.characterName)}</div>
           <div class="chat-prev">${esc(prev)}</div>
         </div>
         <button class="btn-icon chat-del" onclick="event.stopPropagation();App.delChat('${c.id}')" style="color:var(--red)">
@@ -235,7 +235,7 @@ const App = {
         return `<button class="home-recent-item" onclick="Chat.load('${escJs(c.id)}')">
           <div class="home-recent-av">${av}</div>
           <div class="home-recent-info">
-            <div class="home-recent-name">${esc(c.characterName)}</div>
+            <div class="home-recent-name">${esc(c.title || c.characterName)}</div>
             <div class="home-recent-prev">${esc(prev)}</div>
           </div>
         </button>`;

@@ -83,6 +83,8 @@ const API = {
   createChat: (data) => API.post('/api/chats', data),
   getChat: (id) => API.get(`/api/chats/${id}`),
   saveMessages: (id, messages) => API.patch(`/api/chats/${id}/messages`, { messages }),
+  updateChat: (id, data) => API.patch(`/api/chats/${id}`, data),
+  complete: (payload) => API.post('/api/chat/complete', payload).then(r => r.text),
   deleteChat: (id) => API.del(`/api/chats/${id}`),
   deleteAllChats: () => API.del('/api/chats'),
 

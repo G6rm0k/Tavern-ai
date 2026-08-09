@@ -85,6 +85,10 @@ function encryptCharacter(char, key) {
     c.firstMessages = c.firstMessages.map(m =>
       m && !m.startsWith('enc:') ? encryptField(m, key) : m);
   }
+  if (Array.isArray(c.lorebook)) {
+    c.lorebook = c.lorebook.map(e => (e?.content && !e.content.startsWith('enc:'))
+      ? { ...e, content: encryptField(e.content, key) } : e);
+  }
   return c;
 }
 
@@ -100,28 +104,47 @@ function decryptCharacter(char, key) {
     c.firstMessages = c.firstMessages.map(m =>
       m?.startsWith('enc:') ? decryptField(m, key) : m);
   }
+  if (Array.isArray(c.lorebook)) {
+    c.lorebook = c.lorebook.map(e => e?.content?.startsWith('enc:')
+      ? { ...e, content: decryptField(e.content, key) } : e);
+  }
   return c;
 }
 
 // Encrypt chat messages before writing to disk
 function encryptChat(chat, key) {
-  if (!key || !chat.messages?.length) return chat;
+  if (!key) return chat;
   const c = { ...chat };
-  c.messages = c.messages.map(m => {
-    if (!m.content || m.content.startsWith('enc:')) return m;
-    return { ...m, content: encryptField(m.content, key) };
-  });
+  if (c.summary && !c.summary.startsWith('enc:')) c.summary = encryptField(c.summary, key);
+  if (c.messages?.length) {
+    c.messages = c.messages.map(m => {
+      if (!m.content || m.content.startsWith('enc:')) return m;
+      // Alternative replies are chat content too — encrypt them the same way.
+      const out = { ...m, content: encryptField(m.content, key) };
+      if (Array.isArray(m.variants)) {
+        out.variants = m.variants.map(v => (v && !v.startsWith('enc:')) ? encryptField(v, key) : v);
+      }
+      return out;
+    });
+  }
   return c;
 }
 
 // Decrypt chat messages after reading from disk
 function decryptChat(chat, key) {
-  if (!key || !chat.messages?.length) return chat;
+  if (!key) return chat;
   const c = { ...chat };
-  c.messages = c.messages.map(m => {
-    if (!m.content?.startsWith('enc:')) return m;
-    return { ...m, content: decryptField(m.content, key) };
-  });
+  if (c.summary?.startsWith('enc:')) c.summary = decryptField(c.summary, key);
+  if (c.messages?.length) {
+    c.messages = c.messages.map(m => {
+      const out = { ...m };
+      if (m.content?.startsWith('enc:')) out.content = decryptField(m.content, key);
+      if (Array.isArray(m.variants)) {
+        out.variants = m.variants.map(v => v?.startsWith('enc:') ? decryptField(v, key) : v);
+      }
+      return out;
+    });
+  }
   return c;
 }
 
@@ -947,6 +970,29 @@ app.get('/api/chats/:id', (req, res) => {
   res.json(key ? decryptChat(chat, key) : chat);
 });
 
+// Chat metadata: title and the rolling memory summary. Kept separate from the
+// message list so saving a summary never rewrites the whole conversation.
+app.patch('/api/chats/:id', (req, res) => {
+  const userId = requireUser(req, res);
+  if (!userId) return;
+  const chats = readJSON(CHATS_FILE);
+  const idx = chats.findIndex(c => c.id === req.params.id && c.userId === userId);
+  if (idx === -1) return res.status(404).json({ error: 'Not found' });
+
+  const key = keyStore.get(userId);
+  if (req.body.title !== undefined) chats[idx].title = String(req.body.title).slice(0, 120);
+  if (req.body.summary !== undefined) {
+    const s = String(req.body.summary);
+    chats[idx].summary = key && s ? encryptField(s, key) : s;
+  }
+  if (req.body.summarisedUpTo !== undefined) {
+    chats[idx].summarisedUpTo = parseInt(req.body.summarisedUpTo, 10) || 0;
+  }
+  chats[idx].updatedAt = Date.now();
+  writeJSON(CHATS_FILE, chats);
+  res.json({ ok: true });
+});
+
 app.patch('/api/chats/:id/messages', (req, res) => {
   const userId = requireUser(req, res);
   if (!userId) return;
@@ -1150,6 +1196,46 @@ app.post('/api/chat/stream', async (req, res) => {
       res.write(`data: ${JSON.stringify({ error: e.message, code })}\n\n`);
       res.end();
     }
+  }
+});
+
+// ── ONE-SHOT COMPLETION ─────────────────────────────────────────────────────
+// Used for chat summaries: a normal, non-streaming request whose answer the app
+// needs in one piece rather than token by token.
+app.post('/api/chat/complete', async (req, res) => {
+  const userId = verifyToken(req);
+  if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { messages, provider, model, systemPrompt, temperature, max_tokens } = req.body || {};
+  if (!provider?.baseUrl || !Array.isArray(messages)) {
+    return res.status(400).json({ error: 'Провайдер не настроен', code: 'NO_PROVIDER' });
+  }
+  let target;
+  try { target = new URL(provider.baseUrl); }
+  catch { return res.status(400).json({ error: 'Некорректный адрес сервиса', code: 'BAD_URL' }); }
+  if (!/^https?:$/.test(target.protocol)) {
+    return res.status(400).json({ error: 'Некорректный адрес сервиса', code: 'BAD_URL' });
+  }
+
+  try {
+    const fetch = require('node-fetch');
+    const spec = buildUpstream({
+      provider, host: target.hostname, model, messages, systemPrompt,
+      temperature, max_tokens, top_p: undefined,
+    });
+    spec.body.stream = false;
+
+    const r = await fetch(spec.url, { method: 'POST', headers: spec.headers, body: JSON.stringify(spec.body) });
+    const raw = await r.text();
+    if (!r.ok) return res.status(r.status).json({ error: raw.slice(0, 400), status: r.status });
+
+    const data = JSON.parse(raw);
+    // OpenAI shape first, then Anthropic's.
+    const text = data.choices?.[0]?.message?.content
+              ?? (Array.isArray(data.content) ? data.content.map(b => b.text || '').join('') : '');
+    res.json({ text: String(text || '') });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
