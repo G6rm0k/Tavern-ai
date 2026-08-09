@@ -30,9 +30,15 @@ final class BackupCodecTests: XCTestCase {
         characters.upsert(card)
 
         let data = try BackupCodec.export(characters: characters, chats: chats, settings: settings)
-        let json = String(decoding: data, as: UTF8.self)
 
-        XCTAssertTrue(json.contains("data:image/png;base64,"), json)
+        // Decoded rather than a raw substring check: `JSONEncoder` escapes
+        // `/` as `\/` by default, so the literal text `data:image/png` never
+        // appears verbatim in the encoded bytes even though it round-trips
+        // correctly through the decoder.
+        let file = try StoreCoding.decoder.decode(BackupCodec.BackupFile.self, from: data)
+        XCTAssertEqual(file.characters.first?.avatar?.hasPrefix("data:image/png;base64,"), true)
+
+        let json = String(decoding: data, as: UTF8.self)
         XCTAssertFalse(json.contains(fileName), "the local-only file name must not leak into a portable backup")
     }
 
