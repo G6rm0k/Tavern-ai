@@ -472,7 +472,10 @@ const App = {
           <label>${t('auth.password')}</label>
           <input id="unlock-pw" type="password" autocomplete="current-password" autofocus />
         </div>
-        <div id="unlock-err" style="color:var(--red);font-size:13px;display:none"></div>
+        <button class="btn btn-ghost pk-btn" id="pk-unlock-btn" style="width:100%;justify-content:center;display:none">
+          ${Auth.FINGER_ICON} ${t('pk.unlock')}
+        </button>
+        <div id="unlock-err" style="color:var(--red);font-size:13px;display:none;margin-top:10px"></div>
       </div>
       <div class="modal-ft">
         <button class="btn btn-ghost" onclick="App.logout()">${t('profile.logout')}</button>
@@ -481,6 +484,27 @@ const App = {
     const inp = document.getElementById('unlock-pw');
     inp?.focus();
     inp?.addEventListener('keydown', e => { if (e.key === 'Enter') App.doUnlock(); });
+
+    const pk = document.getElementById('pk-unlock-btn');
+    if (pk && Passkey.supported() && Passkey.has(this.user?.username)) {
+      pk.style.display = '';
+      pk.addEventListener('click', () => this.unlockWithPasskey());
+    }
+  },
+
+  async unlockWithPasskey() {
+    const err = document.getElementById('unlock-err');
+    const btn = document.getElementById('pk-unlock-btn');
+    btn.disabled = true;
+    try {
+      const password = await Passkey.recoverPassword(this.user.username);
+      document.getElementById('unlock-pw').value = password;
+      await this.doUnlock();
+    } catch (e) {
+      err.textContent = Passkey.errorText(e);
+      err.style.display = 'block';
+      btn.disabled = false;
+    }
   },
 
   async doUnlock() {

@@ -218,6 +218,7 @@ const Settings = {
               .map(([v,l]) => `<option value="${v}" ${(a.autoLockMin ?? 0) == v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
           </select>
         </div>
+        <div id="sv-passkey"></div>
         <button class="sv-action" onclick="App.showPasswordChange()">
           🔑 ${t('profile.changePassword')}
         </button>
@@ -262,6 +263,7 @@ const Settings = {
     </div>`;
 
     this._renderQR();
+    this._renderPasskey();
 
     // Bind model param sliders (inside #sv-mp-sliders only)
     const mpWrap = document.getElementById('sv-mp-sliders');
@@ -392,6 +394,83 @@ const Settings = {
   async setLang(v)   { this.data.language   = v; i18n.setLang(v); await this.save(); App.navigate('settings'); },
 
   _advOpen: false,
+
+  // ── PASSKEY ────────────────────────────────────────────────────────────────
+  async _renderPasskey() {
+    const wrap = document.getElementById('sv-passkey');
+    if (!wrap) return;
+    const username = App.user?.username;
+
+    // Hidden entirely where it cannot work (a plain-http LAN address, or a
+    // machine with no Hello / Touch ID) rather than shown and failing.
+    if (!Passkey.supported() || !(await Passkey.platformAvailable())) {
+      wrap.innerHTML = '';
+      return;
+    }
+
+    if (Passkey.has(username)) {
+      wrap.innerHTML = `
+        <div class="sv-pk-on">${Auth.FINGER_ICON} <span>${t('pk.on')}</span></div>
+        <button class="sv-action danger" onclick="Settings.disablePasskey()">${t('pk.disable')}</button>`;
+    } else {
+      wrap.innerHTML = `
+        <div class="hint" style="margin-bottom:8px">${t('pk.desc')}</div>
+        <button class="sv-action" onclick="Settings.enablePasskey()">
+          ${Auth.FINGER_ICON} ${t('pk.enable')}
+        </button>`;
+    }
+    wrap.insertAdjacentHTML('beforeend', `<div class="hint" style="margin:6px 0 12px">${t('pk.note')}</div>`);
+  },
+
+  // Wrapping the password needs the password, so ask for it once.
+  enablePasskey() {
+    showModal(`
+      <div class="modal-hd"><div class="modal-title">${t('pk.title')}</div></div>
+      <div class="modal-body">
+        <p style="color:var(--t3);font-size:14px;line-height:1.5;margin-bottom:14px">${t('pk.needPw')}</p>
+        <div class="form-group">
+          <label>${t('auth.password')}</label>
+          <input id="pk-pw" type="password" autocomplete="current-password" />
+        </div>
+        <div id="pk-err" style="color:var(--red);font-size:13px;display:none"></div>
+      </div>
+      <div class="modal-ft">
+        <button class="btn btn-ghost" onclick="closeModal()">${t('char.cancel')}</button>
+        <button class="btn btn-primary" id="pk-go" onclick="Settings._doEnablePasskey()">${t('pk.enable')}</button>
+      </div>`);
+    document.getElementById('pk-pw')?.focus();
+  },
+
+  async _doEnablePasskey() {
+    const pw  = document.getElementById('pk-pw').value;
+    const err = document.getElementById('pk-err');
+    const btn = document.getElementById('pk-go');
+    const show = m => { err.textContent = m; err.style.display = 'block'; btn.disabled = false; };
+    if (!pw) return show(t('profile.pwFill'));
+
+    btn.disabled = true;
+    // Verify the password against the server before storing it, so a typo does
+    // not get sealed into the authenticator.
+    try {
+      await API.unlock(pw);
+    } catch {
+      return show(t('pk.wrongPw'));
+    }
+    try {
+      await Passkey.enable(App.user.username, App.user.displayName, pw);
+      closeModal();
+      await this._renderPasskey();
+      toast(t('pk.enabled'), 'success');
+    } catch (e) {
+      show(Passkey.errorText(e));
+    }
+  },
+
+  async disablePasskey() {
+    Passkey.forget(App.user?.username);
+    await this._renderPasskey();
+    toast(t('pk.disabled'), 'info');
+  },
 
   async setAutoLock(v) {
     this.data.app.autoLockMin = parseInt(v, 10) || 0;

@@ -2373,3 +2373,12 @@ input[type="range"]:active::-webkit-slider-thumb {
   .sv-qr { align-self: center; }
   .wz-wrap { padding: 20px 14px 50px; }
 }
+
+/* Passkey */
+.pk-btn { gap: 8px; }
+.sv-pk-on {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 14px; margin-bottom: 8px; border-radius: var(--r-sm);
+  background: rgba(74,222,128,.10); color: var(--green);
+  font-size: 13.5px; font-weight: 600;
+}
