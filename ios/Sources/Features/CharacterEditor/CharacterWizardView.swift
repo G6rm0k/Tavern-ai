@@ -5,6 +5,7 @@ import SwiftUI
 /// `CharacterEditorView`. Each accepted field writes straight into the form
 /// underneath as it's accepted, same as the web version's live `_applyField`.
 struct CharacterWizardView: View {
+    @EnvironmentObject private var settings: SettingsStore
     @StateObject private var controller: CharacterWizardController
     @Environment(\.dismiss) private var dismiss
     @FocusState private var inputFocused: Bool
@@ -117,30 +118,70 @@ struct CharacterWizardView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 10) {
-            TextField("Напиши что-нибудь…", text: $controller.draftInputText, axis: .vertical)
-                .lineLimit(1...4)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(WesaidTheme.surface, in: RoundedRectangle(cornerRadius: WesaidTheme.radius))
-                .foregroundStyle(WesaidTheme.text1)
-                .tint(WesaidTheme.accent)
-                .focused($inputFocused)
-                .disabled(controller.isThinking)
-
-            Button {
-                inputFocused = false
-                Task { await controller.send() }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .padding(10)
-                    .background(WesaidTheme.accent, in: Circle())
-                    .foregroundStyle(.white)
+        VStack(alignment: .leading, spacing: 0) {
+            ModelControlTab(forceThinking: $controller.forceThinking, showsModelSwitcher: controller.modelChoices.count > 1) {
+                modelSwitcher
             }
-            .disabled(controller.draftInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.isThinking)
+            .padding(.leading, 20)
+            .zIndex(1)
+            .padding(.bottom, -1)
+
+            HStack(spacing: 10) {
+                TextField("Напиши что-нибудь…", text: $controller.draftInputText, axis: .vertical)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(WesaidTheme.surface, in: RoundedRectangle(cornerRadius: WesaidTheme.radius))
+                    .foregroundStyle(WesaidTheme.text1)
+                    .tint(WesaidTheme.accent)
+                    .focused($inputFocused)
+                    .disabled(controller.isThinking)
+
+                Button {
+                    inputFocused = false
+                    Task { await controller.send() }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .padding(10)
+                        .background(WesaidTheme.accent, in: Circle())
+                        .foregroundStyle(.white)
+                }
+                .disabled(controller.draftInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || controller.isThinking)
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
         .background(WesaidTheme.background2.ignoresSafeArea(edges: .bottom))
+    }
+
+    /// See `ChatView.modelSwitcher` — same shape, driven by the wizard
+    /// controller's own `modelChoices`/`modelOverride` instead.
+    private var modelSwitcher: some View {
+        Menu {
+            ForEach(controller.modelChoices) { choice in
+                Button {
+                    controller.modelOverride = choice
+                } label: {
+                    let isCurrent = controller.effectiveModel == choice.model && controller.effectiveProvider?.id == choice.providerID
+                    if isCurrent {
+                        Label(modelMenuLabel(choice), systemImage: "checkmark")
+                    } else {
+                        Text(modelMenuLabel(choice))
+                    }
+                }
+            }
+        } label: {
+            Text(ModelLabel.abbreviate(controller.effectiveModel))
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(controller.modelOverride != nil ? WesaidTheme.accent : WesaidTheme.text2)
+        }
+        .accessibilityLabel("Модель для помощника")
+    }
+
+    private func modelMenuLabel(_ choice: ModelChoice) -> String {
+        let providerName = settings.settings.providers.first { $0.id == choice.providerID }?.name
+        guard let providerName, !providerName.isEmpty else { return choice.model }
+        return "\(choice.model) — \(providerName)"
     }
 }

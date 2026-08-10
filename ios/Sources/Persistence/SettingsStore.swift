@@ -45,9 +45,24 @@ final class SettingsStore: ObservableObject {
         if settings.activeProviderId == id {
             settings.activeProviderId = settings.providers.first?.id
         }
+        settings.favoriteModels.removeAll { $0.providerID == id }
         // The key outlives the provider otherwise: nothing would ever reference
         // that Keychain entry again, and it would sit on the device forever.
         keychain.delete(for: KeychainService.providerKeyAccount(id))
+    }
+
+    // MARK: - Favorite models
+
+    /// Replaces this provider's own starred models with exactly `models`,
+    /// leaving every other provider's favorites untouched — the picker in
+    /// `AddProviderView` only ever knows about the one provider it's editing.
+    func setFavoriteModels(_ models: Set<String>, for providerID: String) {
+        settings.favoriteModels.removeAll { $0.providerID == providerID }
+        settings.favoriteModels.append(contentsOf: models.sorted().map { FavoriteModel(providerID: providerID, model: $0) })
+    }
+
+    func favoriteModels(for providerID: String) -> Set<String> {
+        Set(settings.favoriteModels.filter { $0.providerID == providerID }.map(\.model))
     }
 
     // MARK: - Secrets

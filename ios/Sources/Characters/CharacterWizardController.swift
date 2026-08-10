@@ -44,6 +44,11 @@ final class CharacterWizardController: ObservableObject {
     @Published var draftInputText = ""
     @Published private(set) var editingField: Field?
     @Published var errorMessage: String?
+    /// Same idea as `ChatController.forceThinking`/`modelOverride`: a
+    /// per-session, transient tweak surfaced by the same `ModelControlTab`
+    /// the main chat screen uses, not a change to any provider's settings.
+    @Published var forceThinking = false
+    @Published var modelOverride: ModelChoice?
 
     /// Called every time a proposal is accepted or a manually-edited value is
     /// submitted — the character form updates live, field by field, exactly
@@ -145,17 +150,49 @@ final class CharacterWizardController: ObservableObject {
         messages.append(Message(sender: .bot, text: "✏️ Отредактируй и отправь свой вариант:"))
     }
 
+    /// Same resolution rule as `ChatController.effectiveProvider`: a
+    /// favorite's own provider if it still exists, otherwise the active one.
+    var effectiveProvider: Provider? {
+        if let modelOverride, let provider = settingsStore.settings.providers.first(where: { $0.id == modelOverride.providerID }) {
+            return provider
+        }
+        return settingsStore.activeProvider
+    }
+
+    /// See `ChatController.effectiveModel` for why this is gated on the same
+    /// existence check as `effectiveProvider` rather than a bare `??`.
+    var effectiveModel: String {
+        if let modelOverride, settingsStore.settings.providers.contains(where: { $0.id == modelOverride.providerID }) {
+            return modelOverride.model
+        }
+        return settingsStore.activeProvider?.model ?? ""
+    }
+
+    var modelChoices: [ModelChoice] {
+        var choices: [ModelChoice] = []
+        if let active = settingsStore.activeProvider, !active.model.isEmpty {
+            choices.append(ModelChoice(providerID: active.id, model: active.model))
+        }
+        for favorite in settingsStore.settings.favoriteModels {
+            let choice = ModelChoice(providerID: favorite.providerID, model: favorite.model)
+            guard !choices.contains(choice) else { continue }
+            choices.append(choice)
+        }
+        return choices
+    }
+
     // MARK: - Model round trip
 
     private func ask() async {
-        guard let provider = settingsStore.activeProvider else {
+        guard let provider = effectiveProvider else {
             errorMessage = "Нет активного провайдера. Настрой API в настройках."
             return
         }
         isThinking = true
         defer { isThinking = false }
 
-        let request = ChatCompletionRequest(messages: history, model: provider.model, systemPrompt: Self.systemPrompt)
+        let systemPrompt = forceThinking ? PromptAssembler.thinkingInstruction + "\n\n" + Self.systemPrompt : Self.systemPrompt
+        let request = ChatCompletionRequest(messages: history, model: effectiveModel, systemPrompt: systemPrompt)
         let apiKey = settingsStore.apiKey(for: provider.id)
 
         do {

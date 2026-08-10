@@ -256,7 +256,16 @@ struct DiscoverView: View {
                 let finalCard = await translated(card)
                 characters.upsert(finalCard)
                 characters.setAvatar(data, for: finalCard.id)
-                navigateTo = finalCard
+                // `finalCard` itself never gained an `avatar` file name — only
+                // the store's own copy did, via `setAvatar` above. Navigating
+                // with the stale local value would hand `ChatStore.create`
+                // a card whose `avatar` is nil, and that nil gets permanently
+                // snapshotted onto the new chat session (`characterAvatar` on
+                // `ChatSession` survives the character being edited or even
+                // deleted later, by design) — the chat's top bar would show
+                // the emoji fallback forever, even though the character's own
+                // saved avatar is right there in the store.
+                navigateTo = characters.character(id: finalCard.id) ?? finalCard
             } catch {
                 errorMessage = "Не получилось добавить «\(character.name)» — файл карточки повреждён или недоступен."
             }
@@ -270,9 +279,15 @@ struct DiscoverView: View {
     /// same target-language setting, extended (there too, not just here) to
     /// also cover `description`, which the original only left in English.
     private func translated(_ card: CharacterCard) async -> CharacterCard {
+        guard settings.settings.preferences.autoTranslateEnabled else { return card }
         let targetLanguage = settings.settings.preferences.translateLanguage
-        let sample = card.firstMessages.first ?? card.description
-        guard !sample.isEmpty else { return card }
+        // `??` only falls through on `nil`, not on an empty string — a card
+        // whose first greeting happens to be `""` (blank, not missing) would
+        // otherwise skip detection entirely and leave `description` (which
+        // might well be non-empty) untranslated too.
+        let sample = card.firstMessages.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+            ?? card.description
+        guard !sample.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return card }
         let detected = TranslatorClient.detectLanguage(sample)
         guard detected != targetLanguage else { return card }
 

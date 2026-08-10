@@ -8,6 +8,10 @@ struct AddProviderView: View {
 
     /// `nil` when adding a new provider; set when editing an existing one.
     private let editingID: String?
+    /// The id this provider will be saved under either way — generated up
+    /// front (not just at `save()`) so starring a model before the very
+    /// first save still has a stable provider id to attach the favorite to.
+    private let providerID: String
 
     @State private var name: String
     @State private var baseUrl: String
@@ -26,13 +30,23 @@ struct AddProviderView: View {
 
     init(editing provider: Provider? = nil, apiKey existingKey: String = "") {
         editingID = provider?.id
+        providerID = provider?.id ?? UUID().uuidString
         _name = State(initialValue: provider?.name ?? "")
         _baseUrl = State(initialValue: provider?.baseUrl ?? "")
         _model = State(initialValue: provider?.model ?? "")
         _apiKey = State(initialValue: existingKey)
         _selectedPresetID = State(initialValue: nil)
-        _favoriteModels = State(initialValue: Set(provider?.favoriteModels ?? []))
-        _availableModels = State(initialValue: provider?.favoriteModels ?? [])
+        _favoriteModels = State(initialValue: [])
+        _availableModels = State(initialValue: [])
+    }
+
+    /// Deferred out of `init` (which has no access to `settings` — it's an
+    /// `@EnvironmentObject`, only populated once the view is actually in the
+    /// hierarchy) and run once from `.task` instead.
+    private func loadFavorites() {
+        let existing = settings.favoriteModels(for: providerID)
+        favoriteModels = existing
+        availableModels = existing.sorted()
     }
 
     var body: some View {
@@ -93,6 +107,7 @@ struct AddProviderView: View {
             }
             .scrollContentBackground(.hidden)
             .background(WesaidTheme.background)
+            .task { loadFavorites() }
             .navigationTitle(editingID == nil ? "Новый провайдер" : "Провайдер")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -192,7 +207,7 @@ struct AddProviderView: View {
         } header: {
             Text("Избранные модели")
         } footer: {
-            Text("Появятся быстрым переключателем прямо в чате — переключение действует только на текущий разговор, не меняет модель провайдера по умолчанию.")
+            Text("Появятся быстрым переключателем прямо в чате — вместе с избранными моделями других провайдеров. Переключение действует только на текущий разговор и незаметно использует ключ и адрес нужного провайдера; модель по умолчанию у провайдера не меняется.")
         }
         .listRowBackground(WesaidTheme.surface)
     }
@@ -234,17 +249,17 @@ struct AddProviderView: View {
 
     private func save() {
         let provider = Provider(
-            id: editingID ?? UUID().uuidString,
+            id: providerID,
             name: name.trimmingCharacters(in: .whitespaces),
             baseUrl: baseUrl.trimmingCharacters(in: .whitespaces),
-            model: model.trimmingCharacters(in: .whitespaces),
-            favoriteModels: favoriteModels.sorted()
+            model: model.trimmingCharacters(in: .whitespaces)
         )
         if editingID != nil {
             settings.updateProvider(provider, apiKey: apiKey.isEmpty ? nil : apiKey)
         } else {
             settings.addProvider(provider, apiKey: apiKey)
         }
+        settings.setFavoriteModels(favoriteModels, for: providerID)
         dismiss()
     }
 }

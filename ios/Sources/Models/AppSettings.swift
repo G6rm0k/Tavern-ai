@@ -11,35 +11,40 @@ struct Provider: Codable, Identifiable, Hashable {
     var name: String
     var baseUrl: String
     var model: String
-    /// Models picked out of a `/models` scan for quick switching from the
-    /// chat screen itself, without a trip to Settings — not in the web
-    /// version, which only ever lets you type one model per provider.
-    var favoriteModels: [String]
 
     init(id: String = UUID().uuidString,
          name: String = "",
          baseUrl: String = "",
-         model: String = "",
-         favoriteModels: [String] = []) {
+         model: String = "") {
         self.id = id
         self.name = name
         self.baseUrl = baseUrl
         self.model = model
-        self.favoriteModels = favoriteModels
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, baseUrl, model, favoriteModels
+        case id, name, baseUrl, model
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id             = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
-        name           = (try? c.decode(String.self, forKey: .name)) ?? ""
-        baseUrl        = (try? c.decode(String.self, forKey: .baseUrl)) ?? ""
-        model          = (try? c.decode(String.self, forKey: .model)) ?? ""
-        favoriteModels = (try? c.decode([String].self, forKey: .favoriteModels)) ?? []
+        id      = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        name    = (try? c.decode(String.self, forKey: .name)) ?? ""
+        baseUrl = (try? c.decode(String.self, forKey: .baseUrl)) ?? ""
+        model   = (try? c.decode(String.self, forKey: .model)) ?? ""
     }
+}
+
+/// One starred model for the chat screen's quick switcher — tagged with
+/// which provider it belongs to, so favorites from *different* providers can
+/// sit side by side in the same picker (picking one switches both the model
+/// and, transparently, which provider's key/address the request goes to).
+/// Lives at the settings level rather than on `Provider` itself for exactly
+/// that reason: a per-provider list could never cross providers.
+struct FavoriteModel: Codable, Hashable, Identifiable {
+    var id: String { "\(providerID)|\(model)" }
+    var providerID: String
+    var model: String
 }
 
 struct ModelParams: Codable, Hashable {
@@ -140,11 +145,18 @@ struct AppPreferences: Codable, Hashable {
     /// first messages and description — independent of anything else, since
     /// this app has no UI localization layer of its own to tie it to.
     var translateLanguage: String
+    /// On by default (matches the behavior before this was a toggle at all):
+    /// an untouched setting keeps auto-translating imports, same as always.
+    /// Turning it off is for someone who imports cards already in their
+    /// language and would rather skip the network round trips entirely.
+    var autoTranslateEnabled: Bool
 
-    init(memoryEnabled: Bool = false, forceThinkingByDefault: Bool = false, translateLanguage: String = "ru") {
+    init(memoryEnabled: Bool = false, forceThinkingByDefault: Bool = false,
+         translateLanguage: String = "ru", autoTranslateEnabled: Bool = true) {
         self.memoryEnabled = memoryEnabled
         self.forceThinkingByDefault = forceThinkingByDefault
         self.translateLanguage = translateLanguage
+        self.autoTranslateEnabled = autoTranslateEnabled
     }
 
     enum CodingKeys: String, CodingKey {
@@ -152,6 +164,7 @@ struct AppPreferences: Codable, Hashable {
         case forceThinkingByDefault = "forceThinking"
         // Matches the key the web version writes under `settings.app` on disk.
         case translateLanguage = "translateLang"
+        case autoTranslateEnabled = "autoTranslate"
     }
 
     init(from decoder: Decoder) throws {
@@ -159,6 +172,7 @@ struct AppPreferences: Codable, Hashable {
         memoryEnabled = (try? c.decode(Bool.self, forKey: .memoryEnabled)) ?? false
         forceThinkingByDefault = (try? c.decode(Bool.self, forKey: .forceThinkingByDefault)) ?? false
         translateLanguage = (try? c.decode(String.self, forKey: .translateLanguage)) ?? "ru"
+        autoTranslateEnabled = (try? c.decode(Bool.self, forKey: .autoTranslateEnabled)) ?? true
     }
 }
 
@@ -171,23 +185,27 @@ struct AppSettings: Codable, Hashable {
     /// installed, reads as a malfunction rather than a feature.
     var requireBiometrics: Bool
     var preferences: AppPreferences
+    /// Global, not per-provider — see `FavoriteModel`.
+    var favoriteModels: [FavoriteModel]
 
     init(providers: [Provider] = [],
          activeProviderId: String? = nil,
          modelParams: ModelParams = ModelParams(),
          persona: Persona = Persona(),
          requireBiometrics: Bool = false,
-         preferences: AppPreferences = AppPreferences()) {
+         preferences: AppPreferences = AppPreferences(),
+         favoriteModels: [FavoriteModel] = []) {
         self.providers = providers
         self.activeProviderId = activeProviderId
         self.modelParams = modelParams
         self.persona = persona
         self.requireBiometrics = requireBiometrics
         self.preferences = preferences
+        self.favoriteModels = favoriteModels
     }
 
     enum CodingKeys: String, CodingKey {
-        case providers, activeProviderId, persona, requireBiometrics
+        case providers, activeProviderId, persona, requireBiometrics, favoriteModels
         // "mp" is what the web version calls this object on disk.
         case modelParams = "mp"
         case preferences = "app"
@@ -201,6 +219,7 @@ struct AppSettings: Codable, Hashable {
         persona           = (try? c.decode(Persona.self, forKey: .persona)) ?? Persona()
         requireBiometrics = (try? c.decode(Bool.self, forKey: .requireBiometrics)) ?? false
         preferences       = (try? c.decode(AppPreferences.self, forKey: .preferences)) ?? AppPreferences()
+        favoriteModels    = (try? c.decode([FavoriteModel].self, forKey: .favoriteModels)) ?? []
     }
 
     var activeProvider: Provider? {

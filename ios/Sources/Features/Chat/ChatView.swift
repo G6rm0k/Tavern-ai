@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @EnvironmentObject private var characters: CharacterStore
+    @EnvironmentObject private var settings: SettingsStore
     @StateObject private var controller: ChatController
     @FocusState private var inputFocused: Bool
     @State private var showingProfile = false
@@ -156,43 +157,54 @@ struct ChatView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 10) {
-            controlsCluster
-
-            TextField("Сообщение…", text: $controller.draftInputText, axis: .vertical)
-                .lineLimit(1...5)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(WesaidTheme.surface, in: RoundedRectangle(cornerRadius: WesaidTheme.radius))
-                .foregroundStyle(WesaidTheme.text1)
-                .tint(WesaidTheme.accent)
-                .focused($inputFocused)
-
-            if controller.isStreaming {
-                Button {
-                    controller.stop()
-                } label: {
-                    Image(systemName: "stop.fill")
-                        .padding(10)
-                        .background(.red, in: Circle())
-                        .foregroundStyle(.white)
-                }
-            } else {
-                Button {
-                    let text = controller.draftInputText
-                    inputFocused = false
-                    controller.send(text)
-                } label: {
-                    Image(systemName: "arrow.up")
-                        .padding(10)
-                        .background(WesaidTheme.accent, in: Circle())
-                        .foregroundStyle(.white)
-                }
-                .disabled(controller.draftInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        VStack(alignment: .leading, spacing: 0) {
+            ModelControlTab(forceThinking: $controller.forceThinking, showsModelSwitcher: controller.modelChoices.count > 1) {
+                modelSwitcher
             }
+            .padding(.leading, 20)
+            // The tab and the bar below share one background, so they must
+            // overlap by a hair rather than merely touch — at exactly 0,
+            // sub-pixel rounding on some scales left a hairline seam between
+            // the two shapes.
+            .zIndex(1)
+            .padding(.bottom, -1)
+
+            HStack(spacing: 10) {
+                TextField("Сообщение…", text: $controller.draftInputText, axis: .vertical)
+                    .lineLimit(1...5)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(WesaidTheme.surface, in: RoundedRectangle(cornerRadius: WesaidTheme.radius))
+                    .foregroundStyle(WesaidTheme.text1)
+                    .tint(WesaidTheme.accent)
+                    .focused($inputFocused)
+
+                if controller.isStreaming {
+                    Button {
+                        controller.stop()
+                    } label: {
+                        Image(systemName: "stop.fill")
+                            .padding(10)
+                            .background(.red, in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                } else {
+                    Button {
+                        let text = controller.draftInputText
+                        inputFocused = false
+                        controller.send(text)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .padding(10)
+                            .background(WesaidTheme.accent, in: Circle())
+                            .foregroundStyle(.white)
+                    }
+                    .disabled(controller.draftInputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
         // Extending the fill past the bottom safe area (rather than stopping
         // exactly at it) is what makes this read as flush against the
         // keyboard's own rounded top edge instead of a flat bar with a
@@ -200,59 +212,41 @@ struct ChatView: View {
         .background(WesaidTheme.background2.ignoresSafeArea(edges: .bottom))
     }
 
-    /// One shared pill instead of two separate circles: the "thinking"
-    /// toggle and the model switcher read as one control that forks in two,
-    /// not two unrelated buttons that happen to sit next to each other.
-    private var controlsCluster: some View {
-        HStack(spacing: 0) {
-            thinkingToggle
-            if controller.modelChoices.count > 1 {
-                Divider().frame(height: 18)
-                modelSwitcher
-            }
-        }
-        .background(WesaidTheme.surface, in: Capsule())
-    }
-
-    /// Forces the model to reason step by step before its final answer, for
-    /// this chat only — works the same regardless of provider/model, since
-    /// it's a system-prompt instruction, not a provider-specific API.
-    private var thinkingToggle: some View {
-        Button {
-            controller.forceThinking.toggle()
-        } label: {
-            Image(systemName: "brain")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 36, height: 36)
-                .foregroundStyle(controller.forceThinking ? WesaidTheme.accent : WesaidTheme.text3)
-        }
-        .accessibilityLabel("Размышлять перед ответом")
-    }
-
-    /// Only shown once the active provider actually has more than one model
-    /// to offer (its own default plus at least one starred model) — nothing
+    /// Only shown once there's more than one model to offer across every
+    /// provider (each one's own default, plus whatever's starred) — nothing
     /// to switch between otherwise. Picking here only affects this chat; it
-    /// never touches the provider's own configured model in Settings.
+    /// never touches any provider's own configured model in Settings, and
+    /// can silently switch which provider's key/address handles the request
+    /// when the choice belongs to a provider other than the active one.
     private var modelSwitcher: some View {
         Menu {
-            ForEach(controller.modelChoices, id: \.self) { modelID in
+            ForEach(controller.modelChoices) { choice in
                 Button {
-                    controller.modelOverride = modelID
+                    controller.modelOverride = choice
                 } label: {
-                    if controller.effectiveModel == modelID {
-                        Label(modelID, systemImage: "checkmark")
+                    let isCurrent = controller.effectiveModel == choice.model && controller.effectiveProvider?.id == choice.providerID
+                    if isCurrent {
+                        Label(modelMenuLabel(choice), systemImage: "checkmark")
                     } else {
-                        Text(modelID)
+                        Text(modelMenuLabel(choice))
                     }
                 }
             }
         } label: {
-            Image(systemName: "cpu")
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 36, height: 36)
-                .foregroundStyle(controller.modelOverride != nil ? WesaidTheme.accent : WesaidTheme.text3)
+            Text(ModelLabel.abbreviate(controller.effectiveModel))
+                .font(.caption2.weight(.semibold))
+                .lineLimit(1)
+                .foregroundStyle(controller.modelOverride != nil ? WesaidTheme.accent : WesaidTheme.text2)
         }
         .accessibilityLabel("Модель для этого чата")
+    }
+
+    /// Model id alone is ambiguous once favorites span providers — two
+    /// providers can easily offer a model with the same name.
+    private func modelMenuLabel(_ choice: ModelChoice) -> String {
+        let providerName = settings.settings.providers.first { $0.id == choice.providerID }?.name
+        guard let providerName, !providerName.isEmpty else { return choice.model }
+        return "\(choice.model) — \(providerName)"
     }
 }
 

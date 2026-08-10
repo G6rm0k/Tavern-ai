@@ -25,11 +25,15 @@ final class ChatController: ObservableObject {
     /// next to the input bar. Transient (not persisted to `ChatSession`) —
     /// reopening a chat picks the current global default back up.
     @Published var forceThinking: Bool
-    /// Per-chat model override, picked from the provider's starred models
-    /// next to the input bar — `nil` means "use the provider's own default
-    /// model." Transient for the same reason `forceThinking` is: this is a
-    /// this-conversation choice, not a change to the provider's settings.
-    @Published var modelOverride: String?
+    /// Per-chat model override, picked from any provider's starred models
+    /// next to the input bar — `nil` means "use the active provider's own
+    /// default model." Transient for the same reason `forceThinking` is: this
+    /// is a this-conversation choice, not a change to any provider's settings.
+    /// Carries its own `providerID` because a favorite can belong to a
+    /// *different* provider than the currently active one — picking it
+    /// switches which provider's key/address `generate()` uses too, not just
+    /// the model string (see `effectiveProvider`).
+    @Published var modelOverride: ModelChoice?
     /// Set when regenerating a reply that has messages after it — confirming
     /// abandons that branch of the conversation. `nil` once resolved either way.
     @Published var pendingRegenerateTruncation: String?
@@ -70,21 +74,44 @@ final class ChatController: ObservableObject {
         PromptAssembler.userName(persona: settingsStore.settings.persona)
     }
 
-    /// The model this chat will actually use on the next message: the
-    /// per-chat override if one is set, otherwise the active provider's own
-    /// default. Empty when there is no active provider at all.
-    var effectiveModel: String {
-        modelOverride ?? settingsStore.activeProvider?.model ?? ""
+    /// The provider the next message actually goes to: the override's own
+    /// provider if it still exists, otherwise the active provider. A
+    /// favorite's provider can vanish (deleted from Settings after being
+    /// starred) — falling back rather than sending to a dead id.
+    var effectiveProvider: Provider? {
+        if let modelOverride, let provider = settingsStore.settings.providers.first(where: { $0.id == modelOverride.providerID }) {
+            return provider
+        }
+        return settingsStore.activeProvider
     }
 
-    /// The provider's starred models for the quick switcher, with its own
-    /// default model always included (so switching away and back is always
-    /// possible) even if that model was never itself starred.
-    var modelChoices: [String] {
-        guard let provider = settingsStore.activeProvider else { return [] }
-        var choices = provider.favoriteModels
-        if !provider.model.isEmpty, !choices.contains(provider.model) {
-            choices.insert(provider.model, at: 0)
+    /// The model this chat will actually use on the next message: the
+    /// per-chat override if one is set *and its provider still exists*,
+    /// otherwise the active provider's own default. Gated on the same
+    /// existence check as `effectiveProvider` on purpose — an override whose
+    /// provider was deleted must fall back on both fronts together, or the
+    /// two could disagree (provider A's key paired with a model name that
+    /// was only ever valid for since-deleted provider B).
+    var effectiveModel: String {
+        if let modelOverride, settingsStore.settings.providers.contains(where: { $0.id == modelOverride.providerID }) {
+            return modelOverride.model
+        }
+        return settingsStore.activeProvider?.model ?? ""
+    }
+
+    /// Every provider's starred models, plus the *active* provider's own
+    /// default (so switching away and back is always possible even if that
+    /// model was never itself starred) — one flat list spanning providers,
+    /// not scoped to whichever is active right now.
+    var modelChoices: [ModelChoice] {
+        var choices: [ModelChoice] = []
+        if let active = settingsStore.activeProvider, !active.model.isEmpty {
+            choices.append(ModelChoice(providerID: active.id, model: active.model))
+        }
+        for favorite in settingsStore.settings.favoriteModels {
+            let choice = ModelChoice(providerID: favorite.providerID, model: favorite.model)
+            guard !choices.contains(choice) else { continue }
+            choices.append(choice)
         }
         return choices
     }
@@ -94,7 +121,7 @@ final class ChatController: ObservableObject {
     func send(_ rawText: String) {
         guard !isStreaming else { return }
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, settingsStore.activeProvider != nil else { return }
+        guard !text.isEmpty, effectiveProvider != nil else { return }
 
         draftInputText = ""
         let userMessage = ChatMessage(role: .user, content: text)
@@ -173,7 +200,7 @@ final class ChatController: ObservableObject {
     // MARK: - Generation
 
     private func generate(variantOf: String?, restoreOnFail: String?) async {
-        guard let provider = settingsStore.activeProvider else { return }
+        guard let provider = effectiveProvider else { return }
 
         isStreaming = true
         defer { isStreaming = false }

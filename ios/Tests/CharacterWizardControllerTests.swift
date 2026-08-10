@@ -89,6 +89,26 @@ final class CharacterWizardControllerTests: XCTestCase {
         XCTAssertNil(pendingProposal)
     }
 
+    // MARK: - Model choices (no network — same "pure computed property" shape
+    // as ChatControllerModelSwitchingTests)
+
+    func testEffectiveModelFallsBackToActiveProviderModel() async {
+        let controller = await makeController()
+        let effective = await read { controller.effectiveModel }
+        XCTAssertEqual(effective, "gpt-4o")
+    }
+
+    func testModelOverrideSwitchesToTheOverridesOwnProvider() async {
+        let store = makeSettingsStore(withProvider: true)
+        store.addProvider(Provider(id: "p2", name: "Other", baseUrl: "https://api.anthropic.com/v1", model: "claude-opus-4"), apiKey: "k2")
+        let controller = await CharacterWizardController(settingsStore: store, onApply: { _, _ in })
+        await MainActor.run { controller.modelOverride = ModelChoice(providerID: "p2", model: "claude-opus-4") }
+        let provider = await read { controller.effectiveProvider }
+        XCTAssertEqual(provider?.id, "p2")
+        let effective = await read { controller.effectiveModel }
+        XCTAssertEqual(effective, "claude-opus-4")
+    }
+
     // MARK: - send()
 
     func testSendIgnoresBlankInput() async {

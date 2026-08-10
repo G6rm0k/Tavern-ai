@@ -128,6 +128,17 @@ enum BackupCodec {
                 settingsStore.settings.activeProviderId = newProviders.first?.id
             }
             stats.providersAdded = newProviders.count
+
+            // Favorites for a provider that already existed on this device
+            // are left alone (same "this device's own tuning wins" rule as
+            // model params/persona above) — only favorites belonging to the
+            // providers just added above come along with them.
+            let newProviderIDs = Set(newProviders.map(\.id))
+            let existingFavoriteIDs = Set(settingsStore.settings.favoriteModels.map(\.id))
+            let newFavorites = file.settings.favoriteModels.filter {
+                newProviderIDs.contains($0.providerID) && !existingFavoriteIDs.contains($0.id)
+            }
+            settingsStore.settings.favoriteModels.append(contentsOf: newFavorites)
         }
         return stats
     }
