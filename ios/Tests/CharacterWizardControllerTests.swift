@@ -9,14 +9,35 @@ import XCTest
 /// outright crash: `stubReply` needing a `self` isolated to the main actor,
 /// called from a non-isolated context, silently never ran as expected.
 /// Making it a plain `static func` with no `self` sidesteps the whole class
-/// of problem, and touching `CharacterWizardController`'s `@MainActor`
-/// state now goes through explicit `await` everywhere, same as production
-/// code calling into it would.
+/// of problem.
+///
+/// Every read of `controller`'s `@MainActor` state goes through `read { }`
+/// (an explicit `MainActor.run`), not a bare `await controller.property`.
+/// The two look equivalent, but on this toolchain they were not: with a bare
+/// read, this whole suite failed the same handful of assertions on every run
+/// — including under `-retry-tests-on-failure -test-iterations 3`, which
+/// reran each failure 3 times from a completely fresh controller/session and
+/// still failed every time — always a value that read as nil (or empty)
+/// immediately after the call that was supposed to set it, while a *second*
+/// read moments later (inside `accept()`'s own guard, on the actor itself)
+/// saw the correct value. That an all-retries-fail pattern with fresh state
+/// each time survived was the tell that this was never simulator/CI
+/// flakiness (already ruled out separately) — it was specifically the
+/// implicit hop-and-read from a nonisolated `async` context racing the
+/// write. Routing every read through the same explicit-hop shape already
+/// proven reliable for writes (`await MainActor.run { controller.x = ... }`,
+/// used below and in `AppLockControllerTests`) removes that race instead of
+/// working around it.
 final class CharacterWizardControllerTests: XCTestCase {
 
-    override func tearDown() {
+    override func tearDown() async throws {
         StubURLProtocol.requestHandler = nil
-        super.tearDown()
+        try await super.tearDown()
+    }
+
+    @discardableResult
+    private func read<T>(_ body: @escaping @MainActor () -> T) async -> T {
+        await MainActor.run(body)
     }
 
     private final class AppliedBox {
@@ -54,12 +75,12 @@ final class CharacterWizardControllerTests: XCTestCase {
 
     func testStartsWithAGreetingMessage() async {
         let controller = await makeController()
-        let messages = await controller.messages
+        let messages = await read { controller.messages }
         XCTAssertEqual(messages.count, 1)
         XCTAssertEqual(messages[0].sender, .bot)
-        let isDone = await controller.isDone
+        let isDone = await read { controller.isDone }
         XCTAssertFalse(isDone)
-        let pendingProposal = await controller.pendingProposal
+        let pendingProposal = await read { controller.pendingProposal }
         XCTAssertNil(pendingProposal)
     }
 
@@ -73,7 +94,7 @@ final class CharacterWizardControllerTests: XCTestCase {
         let controller = await makeController()
         await MainActor.run { controller.draftInputText = "   " }
         await controller.send()
-        let messages = await controller.messages
+        let messages = await read { controller.messages }
         XCTAssertEqual(messages.count, 1, "no user message should have been added")
     }
 
@@ -81,7 +102,7 @@ final class CharacterWizardControllerTests: XCTestCase {
         let controller = await makeController(withProvider: false)
         await MainActor.run { controller.draftInputText = "Хочу персонажа" }
         await controller.send()
-        let errorMessage = await controller.errorMessage
+        let errorMessage = await read { controller.errorMessage }
         XCTAssertEqual(errorMessage, "Нет активного провайдера. Настрой API в настройках.")
     }
 
@@ -96,10 +117,10 @@ final class CharacterWizardControllerTests: XCTestCase {
         await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
 
-        let proposal = await controller.pendingProposal
+        let proposal = await read { controller.pendingProposal }
         XCTAssertEqual(proposal?.field, .name)
         XCTAssertEqual(proposal?.value, "Рэйк")
-        let messages = await controller.messages
+        let messages = await read { controller.messages }
         XCTAssertTrue(messages.contains { $0.text.contains("Звучит по-пиратски") })
     }
 
@@ -112,7 +133,7 @@ final class CharacterWizardControllerTests: XCTestCase {
 
         await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
-        let proposalBeforeAccept = await controller.pendingProposal
+        let proposalBeforeAccept = await read { controller.pendingProposal }
         XCTAssertNotNil(proposalBeforeAccept)
 
         StubURLProtocol.requestHandler = { _ in Self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
@@ -121,9 +142,9 @@ final class CharacterWizardControllerTests: XCTestCase {
         XCTAssertEqual(box.items.count, 1)
         XCTAssertEqual(box.items.first?.0, .description)
         XCTAssertEqual(box.items.first?.1, "Пиратский капитан")
-        let proposalAfterAccept = await controller.pendingProposal
+        let proposalAfterAccept = await read { controller.pendingProposal }
         XCTAssertNil(proposalAfterAccept)
-        let isDone = await controller.isDone
+        let isDone = await read { controller.isDone }
         XCTAssertTrue(isDone)
     }
 
@@ -141,7 +162,7 @@ final class CharacterWizardControllerTests: XCTestCase {
         await controller.reject()
 
         XCTAssertTrue(box.items.isEmpty, "rejecting a proposal must never call onApply")
-        let proposal = await controller.pendingProposal
+        let proposal = await read { controller.pendingProposal }
         XCTAssertNil(proposal)
     }
 
@@ -156,7 +177,7 @@ final class CharacterWizardControllerTests: XCTestCase {
         await controller.send()
 
         await MainActor.run { controller.beginEditingProposal() }
-        let draftAfterEditStart = await controller.draftInputText
+        let draftAfterEditStart = await read { controller.draftInputText }
         XCTAssertEqual(draftAfterEditStart, "Рэйк")
         await MainActor.run { controller.draftInputText = "Капитан Морган" }
 
@@ -177,9 +198,9 @@ final class CharacterWizardControllerTests: XCTestCase {
         await MainActor.run { controller.draftInputText = "Привет" }
         await controller.send()
 
-        let proposal = await controller.pendingProposal
+        let proposal = await read { controller.pendingProposal }
         XCTAssertNil(proposal)
-        let messages = await controller.messages
+        let messages = await read { controller.messages }
         XCTAssertTrue(messages.contains { $0.text == "Какой персонаж тебе нужен?" })
     }
 
@@ -190,9 +211,9 @@ final class CharacterWizardControllerTests: XCTestCase {
         await MainActor.run { controller.draftInputText = "Привет" }
         await controller.send()
 
-        let proposal = await controller.pendingProposal
+        let proposal = await read { controller.pendingProposal }
         XCTAssertNil(proposal)
-        let messages = await controller.messages
+        let messages = await read { controller.messages }
         XCTAssertTrue(messages.contains { $0.text.contains("Вот пример") })
     }
 }
