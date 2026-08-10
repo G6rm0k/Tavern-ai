@@ -37,7 +37,7 @@ final class CharacterWizardControllerTests: XCTestCase {
 
     @discardableResult
     private func read<T>(_ body: @escaping @MainActor () -> T) async -> T {
-        await MainActor.run(body)
+        await MainActor.run(body: body)
     }
 
     private final class AppliedBox {
