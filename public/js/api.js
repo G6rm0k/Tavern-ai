@@ -65,6 +65,9 @@ const API = {
   listModels: (p) => API.post('/api/models', p),
   detectLocal: () => API.get('/api/local/detect'),
   netInfo: () => API.get('/api/netinfo'),
+  checkUpdate: () => API.get('/api/update/check'),
+  shortcutState: () => API.get('/api/shortcut'),
+  makeShortcut: (where, remove) => API.post('/api/shortcut', { where, remove }),
 
   // Backup
   getBackup: (withKeys) => API.get(`/api/backup${withKeys ? '?keys=1' : ''}`),
@@ -83,6 +86,8 @@ const API = {
   createChat: (data) => API.post('/api/chats', data),
   getChat: (id) => API.get(`/api/chats/${id}`),
   saveMessages: (id, messages) => API.patch(`/api/chats/${id}/messages`, { messages }),
+  updateChat: (id, data) => API.patch(`/api/chats/${id}`, data),
+  complete: (payload) => API.post('/api/chat/complete', payload).then(r => r.text),
   deleteChat: (id) => API.del(`/api/chats/${id}`),
   deleteAllChats: () => API.del('/api/chats'),
 

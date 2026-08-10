@@ -102,7 +102,7 @@ const Discover = {
       if (typeof Characters.refreshHome === 'function') Characters.refreshHome();
 
       toast('✓ ' + char.name + ' добавлен!', 'success');
-      Translator.translateCharFirstMessages(char);
+      Translator.translateImportedChar(char);
 
       // Update button → open chat
       if (btnEl) {

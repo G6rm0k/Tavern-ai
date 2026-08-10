@@ -30,7 +30,7 @@ Characters.renderList = function(container, chars) {
     </div>`;
   }).join('');
   container.querySelectorAll('.char-card').forEach(card => {
-    card.addEventListener('click', () => Chat.startWith(card.dataset.id));
+    card.addEventListener('click', () => Chat.chooseChat(card.dataset.id));
   });
   if (typeof Anim !== 'undefined' && Anim.enabled) Anim.stagger(container, '.char-card', 35);
 };

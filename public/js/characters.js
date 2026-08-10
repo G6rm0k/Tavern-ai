@@ -139,6 +139,13 @@ const Characters = {
         </div>
 
         <div class="c-sect">
+          <div class="create-section-title">${t('lore.title')}</div>
+          <div class="hint" style="margin-bottom:10px">${t('lore.hint')}</div>
+          <div id="lore-list">${(c.lorebook || []).map(e => this._loreItem(e)).join('')}</div>
+          <button class="btn btn-ghost" id="add-lore" style="font-size:13px">${t('lore.add')}</button>
+        </div>
+
+        <div class="c-sect">
           <div class="create-section-title">Visibility</div>
           <div class="visibility-toggle">
             <button class="visibility-btn ${c.visibility !== 'public' ? 'selected' : ''}" data-vis="private">
@@ -230,6 +237,16 @@ const Characters = {
     });
     this._bindGreetingDelete();
 
+    // Knowledge base
+    document.getElementById('add-lore').addEventListener('click', () => {
+      const list = document.getElementById('lore-list');
+      const div = document.createElement('div');
+      div.innerHTML = this._loreItem();
+      list.appendChild(div.firstElementChild);
+      this._bindLore();
+    });
+    this._bindLore();
+
     // Import drop
     const dropEl = document.getElementById('import-drop');
     dropEl.addEventListener('click', () => document.getElementById('import-file').click());
@@ -246,6 +263,31 @@ const Characters = {
 
     // Save
     document.getElementById('save-char-btn').addEventListener('click', () => this.save(existing?.id));
+  },
+
+  // One knowledge-base entry: keywords that trigger it, and what they pull in.
+  _loreItem(e = {}) {
+    return `
+      <div class="lore-item">
+        <input class="lore-keys" placeholder="${escAttr(t('lore.keys'))}" value="${escAttr((e.keys || []).join(', '))}" />
+        <textarea class="lore-content" rows="2" placeholder="${escAttr(t('lore.content'))}">${esc(e.content || '')}</textarea>
+        <button class="btn-icon del-lore" style="color:var(--red)" title="${escAttr(t('char.delete'))}">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`;
+  },
+
+  _bindLore() {
+    document.querySelectorAll('.del-lore').forEach(b => {
+      b.onclick = () => b.closest('.lore-item')?.remove();
+    });
+  },
+
+  _collectLore() {
+    return [...document.querySelectorAll('.lore-item')].map(item => ({
+      keys: item.querySelector('.lore-keys').value.split(',').map(s => s.trim()).filter(Boolean),
+      content: item.querySelector('.lore-content').value.trim(),
+    })).filter(e => e.keys.length && e.content);
   },
 
   _greetingItem(msg, i) {
@@ -344,7 +386,8 @@ const Characters = {
       firstMessages: greetings,
       visibility: document.getElementById('char-visibility').value,
       avatar_emoji: document.getElementById('avatar-emoji-input').value.trim() || '✦',
-      avatar: Characters._avatarData || null
+      avatar: Characters._avatarData || null,
+      lorebook: this._collectLore(),
     };
 
     const btn = document.getElementById('save-char-btn');

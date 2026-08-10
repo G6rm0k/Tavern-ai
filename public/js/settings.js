@@ -156,6 +156,24 @@ const Settings = {
         <button class="sv-save" onclick="Settings.saveMP()">${t('char.save')}</button>
       </div>
 
+      <!-- Persona: who {{user}} is. Without it the character talks to a blank. -->
+      <div class="sv-card">
+        <div class="sv-title">🎭 ${t('persona.title')}</div>
+        <div class="hint" style="margin-bottom:10px">${t('persona.hint')}</div>
+        <div class="form-group">
+          <label>${t('persona.name')}</label>
+          <input id="sv-persona-name" value="${escAttr(this.data.persona?.name || '')}"
+            placeholder="${escAttr(App.user?.displayName || '')}" />
+        </div>
+        <div class="form-group">
+          <label>${t('persona.desc')}</label>
+          <textarea id="sv-persona-desc" class="sv-textarea" rows="3"
+            placeholder="${escAttr(t('persona.ph'))}">${esc(this.data.persona?.description || '')}</textarea>
+        </div>
+        ${this._tog('memory', '🧠 ' + t('memory.title'), t('memory.desc'), !!a.memory)}
+        <button class="sv-save" onclick="Settings.savePersona()">${t('char.save')}</button>
+      </div>
+
       <!-- Appearance -->
       <div class="sv-card">
         <div class="sv-title">◈ ${t('settings.appearance')}</div>
@@ -197,6 +215,12 @@ const Settings = {
           <button class="sv-opt ${i18n.lang === 'ru' ? 'on' : ''}" onclick="Settings.setLang('ru')">🇷🇺 Русский</button>
           <button class="sv-opt ${i18n.lang === 'en' ? 'on' : ''}" onclick="Settings.setLang('en')">🇬🇧 English</button>
         </div>
+        <div class="sv-sep"></div>
+        <div class="sv-label">${t('settings.translateLang')}</div>
+        <div class="sv-2col">
+          <button class="sv-opt ${(a.translateLang || i18n.lang) === 'ru' ? 'on' : ''}" onclick="Settings.setTranslateLang('ru')">🇷🇺 Русский</button>
+          <button class="sv-opt ${(a.translateLang || i18n.lang) === 'en' ? 'on' : ''}" onclick="Settings.setTranslateLang('en')">🇬🇧 English</button>
+        </div>
       </div>
 
       <!-- Phone access: beats telling a beginner to run ipconfig -->
@@ -218,6 +242,7 @@ const Settings = {
               .map(([v,l]) => `<option value="${v}" ${(a.autoLockMin ?? 0) == v ? 'selected' : ''}>${esc(l)}</option>`).join('')}
           </select>
         </div>
+        <div id="sv-passkey"></div>
         <button class="sv-action" onclick="App.showPasswordChange()">
           🔑 ${t('profile.changePassword')}
         </button>
@@ -250,18 +275,26 @@ const Settings = {
         </button>
       </div>
 
-      <!-- About -->
+      <!-- About / updates -->
       <div class="sv-card">
         <div class="sv-about">
           <div class="sv-about-logo">wesaid</div>
-          <div class="sv-about-ver">v3.1.0</div>
+          <div class="sv-about-ver" id="sv-ver">v3.2.0</div>
           <div class="sv-about-desc">Chat Frontend</div>
         </div>
+        <div id="sv-update" class="sv-update"></div>
+        <button class="sv-action" onclick="Settings.checkUpdate()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M23 4v6h-6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10"/><path d="M1 20v-6h6"/><path d="M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          ${t('upd.check')}
+        </button>
+        <div id="sv-shortcut"></div>
       </div>
 
     </div>`;
 
     this._renderQR();
+    this._renderPasskey();
+    this._renderShortcuts();
 
     // Bind model param sliders (inside #sv-mp-sliders only)
     const mpWrap = document.getElementById('sv-mp-sliders');
@@ -390,8 +423,149 @@ const Settings = {
     await this.save();
   },
   async setLang(v)   { this.data.language   = v; i18n.setLang(v); await this.save(); App.navigate('settings'); },
+  // Independent of the UI language: someone can read the app in Russian
+  // while still wanting imported cards translated to English, or vice versa.
+  async setTranslateLang(v) {
+    if (!this.data.app) this.data.app = {};
+    this.data.app.translateLang = v;
+    await this.save();
+    App.navigate('settings');
+  },
 
   _advOpen: false,
+
+  // ── UPDATES ────────────────────────────────────────────────────────────────
+  async checkUpdate() {
+    const box = document.getElementById('sv-update');
+    box.className = 'sv-update on';
+    box.textContent = t('upd.checking');
+    try {
+      const r = await API.checkUpdate();
+      document.getElementById('sv-ver').textContent = 'v' + r.current;
+      if (r.error) { box.className = 'sv-update on'; box.textContent = t('upd.failed'); return; }
+      if (r.available) {
+        box.className = 'sv-update on good';
+        box.innerHTML = `${t('upd.available').replace('%s', esc(r.latest))} —
+          <a class="wz-link" href="${escAttr(r.url)}" target="_blank" rel="noopener">${t('upd.download')}</a>`;
+      } else {
+        box.className = 'sv-update on';
+        box.textContent = t('upd.latest');
+      }
+    } catch (e) {
+      box.className = 'sv-update on';
+      box.textContent = t('upd.failed');
+    }
+  },
+
+  // Windows-only, and only shown once the server confirms it.
+  async _renderShortcuts() {
+    const wrap = document.getElementById('sv-shortcut');
+    if (!wrap) return;
+    let st;
+    try { st = await API.shortcutState(); } catch { return; }
+    if (!st?.supported) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = `
+      <button class="sv-action" onclick="Settings.toggleShortcut('desktop', ${st.desktop})">
+        🖥️ ${st.desktop ? t('upd.shortcutOff') : t('upd.shortcut')}
+      </button>
+      <button class="sv-action" onclick="Settings.toggleShortcut('startup', ${st.startup})">
+        🚀 ${st.startup ? t('upd.autostartOff') : t('upd.autostart')}
+      </button>`;
+  },
+
+  async toggleShortcut(where, exists) {
+    try {
+      await API.makeShortcut(where, exists);
+      await this._renderShortcuts();
+      toast(exists ? t('toast.deleted') : t('upd.shortcutOk'), 'success');
+    } catch (e) { toastError(e); }
+  },
+
+  async savePersona() {
+    this.data.persona = {
+      name:        document.getElementById('sv-persona-name').value.trim(),
+      description: document.getElementById('sv-persona-desc').value.trim(),
+    };
+    await this.save();
+    toast(t('toast.saved'), 'success');
+  },
+
+  // ── PASSKEY ────────────────────────────────────────────────────────────────
+  async _renderPasskey() {
+    const wrap = document.getElementById('sv-passkey');
+    if (!wrap) return;
+    const username = App.user?.username;
+
+    // Hidden entirely where it cannot work (a plain-http LAN address, or a
+    // machine with no Hello / Touch ID) rather than shown and failing.
+    if (!Passkey.supported() || !(await Passkey.platformAvailable())) {
+      wrap.innerHTML = '';
+      return;
+    }
+
+    if (Passkey.has(username)) {
+      wrap.innerHTML = `
+        <div class="sv-pk-on">${Auth.FINGER_ICON} <span>${t('pk.on')}</span></div>
+        <button class="sv-action danger" onclick="Settings.disablePasskey()">${t('pk.disable')}</button>`;
+    } else {
+      wrap.innerHTML = `
+        <div class="hint" style="margin-bottom:8px">${t('pk.desc')}</div>
+        <button class="sv-action" onclick="Settings.enablePasskey()">
+          ${Auth.FINGER_ICON} ${t('pk.enable')}
+        </button>`;
+    }
+    wrap.insertAdjacentHTML('beforeend', `<div class="hint" style="margin:6px 0 12px">${t('pk.note')}</div>`);
+  },
+
+  // Wrapping the password needs the password, so ask for it once.
+  enablePasskey() {
+    showModal(`
+      <div class="modal-hd"><div class="modal-title">${t('pk.title')}</div></div>
+      <div class="modal-body">
+        <p style="color:var(--t3);font-size:14px;line-height:1.5;margin-bottom:14px">${t('pk.needPw')}</p>
+        <div class="form-group">
+          <label>${t('auth.password')}</label>
+          <input id="pk-pw" type="password" autocomplete="current-password" />
+        </div>
+        <div id="pk-err" style="color:var(--red);font-size:13px;display:none"></div>
+      </div>
+      <div class="modal-ft">
+        <button class="btn btn-ghost" onclick="closeModal()">${t('char.cancel')}</button>
+        <button class="btn btn-primary" id="pk-go" onclick="Settings._doEnablePasskey()">${t('pk.enable')}</button>
+      </div>`);
+    document.getElementById('pk-pw')?.focus();
+  },
+
+  async _doEnablePasskey() {
+    const pw  = document.getElementById('pk-pw').value;
+    const err = document.getElementById('pk-err');
+    const btn = document.getElementById('pk-go');
+    const show = m => { err.textContent = m; err.style.display = 'block'; btn.disabled = false; };
+    if (!pw) return show(t('profile.pwFill'));
+
+    btn.disabled = true;
+    // Verify the password against the server before storing it, so a typo does
+    // not get sealed into the authenticator.
+    try {
+      await API.unlock(pw);
+    } catch {
+      return show(t('pk.wrongPw'));
+    }
+    try {
+      await Passkey.enable(App.user.username, App.user.displayName, pw);
+      closeModal();
+      await this._renderPasskey();
+      toast(t('pk.enabled'), 'success');
+    } catch (e) {
+      show(Passkey.errorText(e));
+    }
+  },
+
+  async disablePasskey() {
+    Passkey.forget(App.user?.username);
+    await this._renderPasskey();
+    toast(t('pk.disabled'), 'info');
+  },
 
   async setAutoLock(v) {
     this.data.app.autoLockMin = parseInt(v, 10) || 0;

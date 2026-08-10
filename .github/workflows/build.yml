@@ -1,0 +1,61 @@
+name: Build executables
+
+# Produces the double-click builds. Tag a release (v3.2.0) and the binaries are
+# attached to it; run manually to check a build without publishing anything.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build for Windows, macOS and Linux
+        run: npx pkg . --out-path dist
+
+      - name: Name the files after their platform
+        run: |
+          cd dist
+          ls -la
+          for f in *; do
+            case "$f" in
+              *win*)    mv "$f" wesaid-windows.exe ;;
+              *macos*)  mv "$f" wesaid-macos ;;
+              *linux*)  mv "$f" wesaid-linux ;;
+            esac
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wesaid-builds
+          path: dist/*
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          body: |
+            Скачайте файл для своей системы и запустите двойным кликом.
+            Node.js устанавливать не нужно.
+
+            - Windows — `wesaid-windows.exe`
+            - macOS — `wesaid-macos`
+            - Linux — `wesaid-linux`
+
+            Данные сохраняются в папку `data` рядом с программой.

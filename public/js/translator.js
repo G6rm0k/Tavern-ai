@@ -64,25 +64,34 @@ const Translator = {
     toast('✓ Приветствия переведены', 'success');
   },
 
-  // ── Translate first messages of an already-saved char (from discover) ──────
-  async translateCharFirstMessages(char) {
-    const uiLang = i18n.lang || 'ru';
-    if (!char?.firstMessages?.length) return;
+  // ── Translate an already-saved char (from discover): first messages AND
+  // description — the description used to be left as-is, which meant a card
+  // imported from Chub still showed its English tagline everywhere it's
+  // shown (search results, home list) even after its greetings got translated.
+  async translateImportedChar(char) {
+    // Independent of the UI language on purpose — see `settings.translateLang`.
+    const targetLang = Settings.data.app?.translateLang || i18n.lang || 'ru';
+    const hasMessages = char?.firstMessages?.length;
+    const hasDescription = char?.description?.trim();
+    if (!hasMessages && !hasDescription) return;
 
-    // Detect language of first message
-    const textLang = this.detect(char.firstMessages[0]);
-    if (textLang === uiLang) return;
+    // Detect language from whichever field actually has text.
+    const sample = char.firstMessages?.[0] || char.description;
+    const textLang = this.detect(sample);
+    if (textLang === targetLang) return;
 
-    toast(`🌐 Перевожу сообщения ${char.name}…`, 'info');
+    toast(`🌐 Перевожу ${char.name}…`, 'info');
 
-    const translated = [];
-    for (const msg of char.firstMessages) {
-      if (!msg.trim()) { translated.push(msg); continue; }
-      const t = await this.translate(msg, textLang, uiLang);
-      translated.push(t);
+    const translatedMessages = [];
+    for (const msg of char.firstMessages || []) {
+      if (!msg.trim()) { translatedMessages.push(msg); continue; }
+      translatedMessages.push(await this.translate(msg, textLang, targetLang));
     }
+    const translatedDescription = hasDescription
+      ? await this.translate(char.description, textLang, targetLang)
+      : char.description;
 
-    // Save translated messages back to server
+    // Save translated fields back to server
     try {
       const res = await fetch(`/api/characters/${char.id}`, {
         method: 'PUT',
@@ -90,14 +99,14 @@ const Translator = {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${API.token}`,
         },
-        body: JSON.stringify({ ...char, firstMessages: translated }),
+        body: JSON.stringify({ ...char, firstMessages: translatedMessages, description: translatedDescription }),
       });
       if (res.ok) {
         const updated = await res.json();
         // Update in local list
         const idx = Characters.list.findIndex(c => c.id === char.id);
         if (idx >= 0) Characters.list[idx] = updated;
-        toast(`✓ ${char.name}: сообщения переведены`, 'success');
+        toast(`✓ ${char.name}: переведён`, 'success');
       }
     } catch(e) {
       console.warn('Save translated char failed:', e);
