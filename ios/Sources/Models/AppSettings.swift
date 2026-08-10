@@ -11,27 +11,34 @@ struct Provider: Codable, Identifiable, Hashable {
     var name: String
     var baseUrl: String
     var model: String
+    /// Models picked out of a `/models` scan for quick switching from the
+    /// chat screen itself, without a trip to Settings — not in the web
+    /// version, which only ever lets you type one model per provider.
+    var favoriteModels: [String]
 
     init(id: String = UUID().uuidString,
          name: String = "",
          baseUrl: String = "",
-         model: String = "") {
+         model: String = "",
+         favoriteModels: [String] = []) {
         self.id = id
         self.name = name
         self.baseUrl = baseUrl
         self.model = model
+        self.favoriteModels = favoriteModels
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, baseUrl, model
+        case id, name, baseUrl, model, favoriteModels
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id      = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
-        name    = (try? c.decode(String.self, forKey: .name)) ?? ""
-        baseUrl = (try? c.decode(String.self, forKey: .baseUrl)) ?? ""
-        model   = (try? c.decode(String.self, forKey: .model)) ?? ""
+        id             = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        name           = (try? c.decode(String.self, forKey: .name)) ?? ""
+        baseUrl        = (try? c.decode(String.self, forKey: .baseUrl)) ?? ""
+        model          = (try? c.decode(String.self, forKey: .model)) ?? ""
+        favoriteModels = (try? c.decode([String].self, forKey: .favoriteModels)) ?? []
     }
 }
 

@@ -25,6 +25,11 @@ final class ChatController: ObservableObject {
     /// next to the input bar. Transient (not persisted to `ChatSession`) —
     /// reopening a chat picks the current global default back up.
     @Published var forceThinking: Bool
+    /// Per-chat model override, picked from the provider's starred models
+    /// next to the input bar — `nil` means "use the provider's own default
+    /// model." Transient for the same reason `forceThinking` is: this is a
+    /// this-conversation choice, not a change to the provider's settings.
+    @Published var modelOverride: String?
     /// Set when regenerating a reply that has messages after it — confirming
     /// abandons that branch of the conversation. `nil` once resolved either way.
     @Published var pendingRegenerateTruncation: String?
@@ -63,6 +68,25 @@ final class ChatController: ObservableObject {
     /// system prompt but isn't part of `generate()`'s own fill step).
     var displayUserName: String {
         PromptAssembler.userName(persona: settingsStore.settings.persona)
+    }
+
+    /// The model this chat will actually use on the next message: the
+    /// per-chat override if one is set, otherwise the active provider's own
+    /// default. Empty when there is no active provider at all.
+    var effectiveModel: String {
+        modelOverride ?? settingsStore.activeProvider?.model ?? ""
+    }
+
+    /// The provider's starred models for the quick switcher, with its own
+    /// default model always included (so switching away and back is always
+    /// possible) even if that model was never itself starred.
+    var modelChoices: [String] {
+        guard let provider = settingsStore.activeProvider else { return [] }
+        var choices = provider.favoriteModels
+        if !provider.model.isEmpty, !choices.contains(provider.model) {
+            choices.insert(provider.model, at: 0)
+        }
+        return choices
     }
 
     // MARK: - Send
@@ -166,7 +190,7 @@ final class ChatController: ObservableObject {
             forceThinking: forceThinking
         )
         let request = ChatCompletionRequest(
-            messages: context, model: provider.model, systemPrompt: systemPrompt,
+            messages: context, model: effectiveModel, systemPrompt: systemPrompt,
             temperature: mp.temperature, maxTokens: mp.maxTokens, topP: mp.topP
         )
         let apiKey = settingsStore.apiKey(for: provider.id)

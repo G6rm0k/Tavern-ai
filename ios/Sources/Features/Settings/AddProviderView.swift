@@ -14,6 +14,10 @@ struct AddProviderView: View {
     @State private var model: String
     @State private var apiKey: String
     @State private var selectedPresetID: String?
+    @State private var favoriteModels: Set<String>
+    @State private var availableModels: [String]
+    @State private var isScanningModels = false
+    @State private var modelScanErrorMessage: String?
 
     private enum TestState: Equatable {
         case idle, testing, success, failure(String)
@@ -27,6 +31,8 @@ struct AddProviderView: View {
         _model = State(initialValue: provider?.model ?? "")
         _apiKey = State(initialValue: existingKey)
         _selectedPresetID = State(initialValue: nil)
+        _favoriteModels = State(initialValue: Set(provider?.favoriteModels ?? []))
+        _availableModels = State(initialValue: provider?.favoriteModels ?? [])
     }
 
     var body: some View {
@@ -60,6 +66,8 @@ struct AddProviderView: View {
                         .autocorrectionDisabled()
                 }
                 .listRowBackground(WesaidTheme.surface)
+
+                favoriteModelsSection
 
                 Section {
                     Button {
@@ -150,12 +158,87 @@ struct AddProviderView: View {
         }
     }
 
+    // MARK: - Model favorites
+
+    private var favoriteModelsSection: some View {
+        Section {
+            Button {
+                Task { await scanModels() }
+            } label: {
+                HStack {
+                    if isScanningModels { ProgressView().tint(WesaidTheme.accent) }
+                    Text("Сканировать модели провайдера")
+                }
+            }
+            .disabled(baseUrl.trimmingCharacters(in: .whitespaces).isEmpty || isScanningModels)
+
+            if let modelScanErrorMessage {
+                Text(modelScanErrorMessage).font(.caption).foregroundStyle(.red)
+            }
+
+            ForEach(availableModels, id: \.self) { modelID in
+                Button {
+                    toggleFavorite(modelID)
+                } label: {
+                    HStack {
+                        Text(modelID).foregroundStyle(WesaidTheme.text1)
+                        Spacer()
+                        if favoriteModels.contains(modelID) {
+                            Image(systemName: "star.fill").foregroundStyle(WesaidTheme.accent)
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Избранные модели")
+        } footer: {
+            Text("Появятся быстрым переключателем прямо в чате — переключение действует только на текущий разговор, не меняет модель провайдера по умолчанию.")
+        }
+        .listRowBackground(WesaidTheme.surface)
+    }
+
+    private func toggleFavorite(_ modelID: String) {
+        if favoriteModels.contains(modelID) {
+            favoriteModels.remove(modelID)
+        } else {
+            favoriteModels.insert(modelID)
+        }
+    }
+
+    private func scanModels() async {
+        isScanningModels = true
+        modelScanErrorMessage = nil
+        defer { isScanningModels = false }
+        do {
+            let models = try await ModelCatalogClient().fetchModels(baseURL: baseUrl, apiKey: apiKey)
+            // Union with existing favorites: a fresh scan coming back shorter
+            // (a rate limit, a provider trimming its own list) must not make
+            // an already-starred model vanish from view.
+            var merged = models
+            for favorite in favoriteModels where !merged.contains(favorite) {
+                merged.append(favorite)
+            }
+            availableModels = merged
+        } catch {
+            modelScanErrorMessage = describeScanFailure(error)
+        }
+    }
+
+    private func describeScanFailure(_ error: Error) -> String {
+        switch error {
+        case ModelCatalogClient.CatalogError.badURL: return "Некорректный адрес провайдера"
+        case ModelCatalogClient.CatalogError.httpError(let status): return "Провайдер ответил ошибкой \(status)"
+        default: return "Не удалось получить список моделей"
+        }
+    }
+
     private func save() {
         let provider = Provider(
             id: editingID ?? UUID().uuidString,
             name: name.trimmingCharacters(in: .whitespaces),
             baseUrl: baseUrl.trimmingCharacters(in: .whitespaces),
-            model: model.trimmingCharacters(in: .whitespaces)
+            model: model.trimmingCharacters(in: .whitespaces),
+            favoriteModels: favoriteModels.sorted()
         )
         if editingID != nil {
             settings.updateProvider(provider, apiKey: apiKey.isEmpty ? nil : apiKey)

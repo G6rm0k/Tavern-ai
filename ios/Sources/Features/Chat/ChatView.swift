@@ -157,7 +157,7 @@ struct ChatView: View {
 
     private var inputBar: some View {
         HStack(spacing: 10) {
-            thinkingToggle
+            controlsCluster
 
             TextField("Сообщение…", text: $controller.draftInputText, axis: .vertical)
                 .lineLimit(1...5)
@@ -200,6 +200,20 @@ struct ChatView: View {
         .background(WesaidTheme.background2.ignoresSafeArea(edges: .bottom))
     }
 
+    /// One shared pill instead of two separate circles: the "thinking"
+    /// toggle and the model switcher read as one control that forks in two,
+    /// not two unrelated buttons that happen to sit next to each other.
+    private var controlsCluster: some View {
+        HStack(spacing: 0) {
+            thinkingToggle
+            if controller.modelChoices.count > 1 {
+                Divider().frame(height: 18)
+                modelSwitcher
+            }
+        }
+        .background(WesaidTheme.surface, in: Capsule())
+    }
+
     /// Forces the model to reason step by step before its final answer, for
     /// this chat only — works the same regardless of provider/model, since
     /// it's a system-prompt instruction, not a provider-specific API.
@@ -208,13 +222,37 @@ struct ChatView: View {
             controller.forceThinking.toggle()
         } label: {
             Image(systemName: "brain")
-                .font(.system(size: 16, weight: .semibold))
-                .padding(10)
-                .background(controller.forceThinking ? WesaidTheme.accent : WesaidTheme.surface,
-                            in: Circle())
-                .foregroundStyle(controller.forceThinking ? .white : WesaidTheme.text3)
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 36, height: 36)
+                .foregroundStyle(controller.forceThinking ? WesaidTheme.accent : WesaidTheme.text3)
         }
         .accessibilityLabel("Размышлять перед ответом")
+    }
+
+    /// Only shown once the active provider actually has more than one model
+    /// to offer (its own default plus at least one starred model) — nothing
+    /// to switch between otherwise. Picking here only affects this chat; it
+    /// never touches the provider's own configured model in Settings.
+    private var modelSwitcher: some View {
+        Menu {
+            ForEach(controller.modelChoices, id: \.self) { modelID in
+                Button {
+                    controller.modelOverride = modelID
+                } label: {
+                    if controller.effectiveModel == modelID {
+                        Label(modelID, systemImage: "checkmark")
+                    } else {
+                        Text(modelID)
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "cpu")
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 36, height: 36)
+                .foregroundStyle(controller.modelOverride != nil ? WesaidTheme.accent : WesaidTheme.text3)
+        }
+        .accessibilityLabel("Модель для этого чата")
     }
 }
 
