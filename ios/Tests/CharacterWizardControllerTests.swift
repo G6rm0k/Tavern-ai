@@ -118,7 +118,9 @@ final class CharacterWizardControllerTests: XCTestCase {
         await controller.send()
 
         let proposal = await read { controller.pendingProposal }
-        XCTAssertEqual(proposal?.field, .name)
+        let diagError = await read { controller.errorMessage }
+        let diagMessages = await read { controller.messages.map(\.text) }
+        XCTAssertEqual(proposal?.field, .name, "error=\(diagError ?? "nil") messages=\(diagMessages)")
         XCTAssertEqual(proposal?.value, "Рэйк")
         let messages = await read { controller.messages }
         XCTAssertTrue(messages.contains { $0.text.contains("Звучит по-пиратски") })
@@ -134,7 +136,10 @@ final class CharacterWizardControllerTests: XCTestCase {
         await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
         let proposalBeforeAccept = await read { controller.pendingProposal }
-        XCTAssertNotNil(proposalBeforeAccept)
+        let diag1Error = await read { controller.errorMessage }
+        let diag1Messages = await read { controller.messages.map(\.text) }
+        let diag1IsThinking = await read { controller.isThinking }
+        XCTAssertNotNil(proposalBeforeAccept, "error=\(diag1Error ?? "nil") isThinking=\(diag1IsThinking) messages=\(diag1Messages)")
 
         StubURLProtocol.requestHandler = { _ in Self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
         await controller.accept()
@@ -201,7 +206,9 @@ final class CharacterWizardControllerTests: XCTestCase {
         let proposal = await read { controller.pendingProposal }
         XCTAssertNil(proposal)
         let messages = await read { controller.messages }
-        XCTAssertTrue(messages.contains { $0.text == "Какой персонаж тебе нужен?" })
+        let diagError = await read { controller.errorMessage }
+        XCTAssertTrue(messages.contains { $0.text == "Какой персонаж тебе нужен?" },
+                       "error=\(diagError ?? "nil") messages=\(messages.map(\.text))")
     }
 
     func testMalformedJSONWithoutAnActionKeyFallsBackToPlainText() async {
@@ -214,6 +221,8 @@ final class CharacterWizardControllerTests: XCTestCase {
         let proposal = await read { controller.pendingProposal }
         XCTAssertNil(proposal)
         let messages = await read { controller.messages }
-        XCTAssertTrue(messages.contains { $0.text.contains("Вот пример") })
+        let diagError = await read { controller.errorMessage }
+        XCTAssertTrue(messages.contains { $0.text.contains("Вот пример") },
+                       "error=\(diagError ?? "nil") messages=\(messages.map(\.text))")
     }
 }
