@@ -11,7 +11,7 @@ final class ChatControllerModelSwitchingTests: XCTestCase {
 
     private func makeController(favoriteModels: [String] = [], hasProvider: Bool = true) async -> ChatController {
         let paths = AppPaths(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        let keychain = KeychainService(service: "app.wesaid.tests.\(UUID().uuidString)")
+        let keychain = InMemoryKeychain()
         let characters = CharacterStore(paths: paths, seedOnFirstLaunch: false)
         let chats = ChatStore(paths: paths)
         let settings = SettingsStore(paths: paths, keychain: keychain)

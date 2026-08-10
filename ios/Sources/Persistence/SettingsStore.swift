@@ -14,9 +14,9 @@ final class SettingsStore: ObservableObject {
     }
 
     private let store: JSONStore<AppSettings>
-    private let keychain: KeychainService
+    private let keychain: any KeychainServicing
 
-    init(paths: AppPaths = .documents, keychain: KeychainService = .shared) {
+    init(paths: AppPaths = .documents, keychain: any KeychainServicing = KeychainService.shared) {
         store = JSONStore(fileURL: paths.settingsFile, defaultValue: AppSettings())
         self.keychain = keychain
         settings = store.load()

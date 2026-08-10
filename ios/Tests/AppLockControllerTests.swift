@@ -27,12 +27,12 @@ final class AppLockControllerTests: XCTestCase {
 
     private func makeSettingsStore(requireBiometrics: Bool) -> SettingsStore {
         let paths = AppPaths(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        // A dedicated Keychain service, not `.shared`: the test host is the
-        // real `wesaidApp`, which is itself constructing an `AppStores()`
-        // against the real `KeychainService.shared` at the same moment this
-        // suite starts touching it — no reason to contend over the same
-        // Keychain identifier when the tests here never assert on stored keys.
-        let keychain = KeychainService(service: "app.wesaid.tests.\(UUID().uuidString)")
+        // In-memory, not the real Keychain: the test host is the real
+        // `wesaidApp`, which is itself constructing an `AppStores()` against
+        // the real `KeychainService.shared` at the same moment this suite
+        // starts — no reason to contend over `Security.framework` when
+        // these tests never assert on stored keys.
+        let keychain = InMemoryKeychain()
         let store = SettingsStore(paths: paths, keychain: keychain)
         store.settings.requireBiometrics = requireBiometrics
         return store

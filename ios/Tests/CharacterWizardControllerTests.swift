@@ -11,23 +11,28 @@ import XCTest
 /// Making it a plain `static func` with no `self` sidesteps the whole class
 /// of problem.
 ///
-/// Every read of `controller`'s `@MainActor` state goes through `read { }`
-/// (an explicit `MainActor.run`), not a bare `await controller.property`.
-/// The two look equivalent, but on this toolchain they were not: with a bare
-/// read, this whole suite failed the same handful of assertions on every run
-/// — including under `-retry-tests-on-failure -test-iterations 3`, which
-/// reran each failure 3 times from a completely fresh controller/session and
-/// still failed every time — always a value that read as nil (or empty)
-/// immediately after the call that was supposed to set it, while a *second*
-/// read moments later (inside `accept()`'s own guard, on the actor itself)
-/// saw the correct value. That an all-retries-fail pattern with fresh state
-/// each time survived was the tell that this was never simulator/CI
-/// flakiness (already ruled out separately) — it was specifically the
-/// implicit hop-and-read from a nonisolated `async` context racing the
-/// write. Routing every read through the same explicit-hop shape already
-/// proven reliable for writes (`await MainActor.run { controller.x = ... }`,
-/// used below and in `AppLockControllerTests`) removes that race instead of
-/// working around it.
+/// This suite went through two other wrong diagnoses before the real one.
+/// It reliably failed a handful of assertions — `pendingProposal` reading
+/// nil right where a test expected the proposal `ask()` had just parsed —
+/// even under `-retry-tests-on-failure -test-iterations 3`, which reruns a
+/// failure from a completely fresh controller/session and still failed
+/// every time (ruling out simulator/CI restart flakiness) and *also*
+/// survived routing every read through an explicit `MainActor.run` instead
+/// of a bare `await controller.property` (ruling out an actor-hop race).
+/// Diagnostics on the failing assertions (`controller.errorMessage`) showed
+/// the real cause: `ask()` was genuinely failing `validate(baseURL:apiKey:)`
+/// with "no API key", because the real Keychain — `KeychainService`,
+/// `Security.framework` underneath — was intermittently returning nothing
+/// for a key `addProvider` had just written moments earlier in the same
+/// test. That is a property of running an *unsigned* test host against the
+/// real Keychain on this CI runner, nothing to do with this controller or
+/// with how the test reads its state. `makeSettingsStore` now wires up
+/// `InMemoryKeychain` instead (see `KeychainServicing`), which sidesteps
+/// `Security.framework` entirely.
+///
+/// `read { }` (an explicit `MainActor.run`, kept from the actor-hop
+/// hypothesis) is harmless and still used below for every property read —
+/// no reason to revert it now that the real cause is fixed.
 final class CharacterWizardControllerTests: XCTestCase {
 
     override func tearDown() async throws {
@@ -46,7 +51,7 @@ final class CharacterWizardControllerTests: XCTestCase {
 
     private func makeSettingsStore(withProvider: Bool) -> SettingsStore {
         let paths = AppPaths(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        let keychain = KeychainService(service: "app.wesaid.tests.\(UUID().uuidString)")
+        let keychain = InMemoryKeychain()
         let store = SettingsStore(paths: paths, keychain: keychain)
         if withProvider {
             store.addProvider(Provider(id: "p1", name: "Test", baseUrl: "https://api.openai.com/v1", model: "gpt-4o"), apiKey: "test-key")

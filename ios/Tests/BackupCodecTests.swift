@@ -5,10 +5,8 @@ final class BackupCodecTests: XCTestCase {
 
     private func makeStores() -> (characters: CharacterStore, chats: ChatStore, settings: SettingsStore) {
         let paths = AppPaths(root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
-        // A dedicated Keychain service rather than `.shared` — see the same
-        // note in `AppLockControllerTests`: the test host is the real app,
-        // which is itself touching the shared Keychain identifier at launch.
-        let keychain = KeychainService(service: "app.wesaid.tests.\(UUID().uuidString)")
+        // In-memory, not the real Keychain — see `KeychainServicing`.
+        let keychain = InMemoryKeychain()
         return (
             CharacterStore(paths: paths, seedOnFirstLaunch: false),
             ChatStore(paths: paths),

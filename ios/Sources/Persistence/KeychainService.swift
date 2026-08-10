@@ -1,6 +1,22 @@
 import Foundation
 import Security
 
+/// What `SettingsStore` needs from a secrets store — lets tests inject an
+/// in-memory double instead of going through `Security.framework`. On this
+/// project's CI runner, the real Keychain proved unreliable for an unsigned
+/// test host: `SecItemCopyMatching` would intermittently return
+/// `errSecItemNotFound` for a key `SecItemAdd` had just written moments
+/// earlier in the same test, which surfaced as `CharacterWizardController`
+/// legitimately failing its own `validate(baseURL:apiKey:)` check — not a
+/// bug in the controller or in how tests read its `@MainActor` state (both
+/// were investigated and ruled out first). Tests have no reason to exercise
+/// the real Keychain at all; only the shipping app does.
+protocol KeychainServicing {
+    func string(for account: String) -> String?
+    @discardableResult func set(_ value: String?, for account: String) -> OSStatus
+    @discardableResult func delete(for account: String) -> OSStatus
+}
+
 /// Secrets store. API keys live here and only here — never in `settings.json`,
 /// never in a backup export.
 ///
@@ -8,7 +24,7 @@ import Security
 /// still works for a foreground app: the key is unreadable while the phone is
 /// locked, and it is excluded from iCloud Keychain and from encrypted device
 /// backups, so restoring this app onto another phone cannot carry the key over.
-struct KeychainService {
+struct KeychainService: KeychainServicing {
 
     static let shared = KeychainService(service: "app.wesaid.secrets")
 
