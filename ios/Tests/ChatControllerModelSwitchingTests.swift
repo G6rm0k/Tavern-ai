@@ -36,7 +36,7 @@ final class ChatControllerModelSwitchingTests: XCTestCase {
 
     func testEffectiveModelUsesOverrideWhenSet() async {
         let controller = await makeController(favoriteModels: ["gpt-4o-mini"])
-        await controller.modelOverride = "gpt-4o-mini"
+        await MainActor.run { controller.modelOverride = "gpt-4o-mini" }
         let effective = await controller.effectiveModel
         XCTAssertEqual(effective, "gpt-4o-mini")
     }
