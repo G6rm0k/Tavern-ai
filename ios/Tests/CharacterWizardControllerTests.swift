@@ -1,7 +1,17 @@
 import XCTest
 @testable import wesaid
 
-@MainActor
+/// Every test method is `async`, and the class itself is deliberately *not*
+/// `@MainActor` — same reasoning as `AppLockControllerTests`. Mixing that
+/// class-level annotation with a helper closure invoked off the main thread
+/// (`StubURLProtocol.requestHandler` fires from URLSession's own delivery
+/// queue, not the main actor) produced wrong results here rather than an
+/// outright crash: `stubReply` needing a `self` isolated to the main actor,
+/// called from a non-isolated context, silently never ran as expected.
+/// Making it a plain `static func` with no `self` sidesteps the whole class
+/// of problem, and touching `CharacterWizardController`'s `@MainActor`
+/// state now goes through explicit `await` everywhere, same as production
+/// code calling into it would.
 final class CharacterWizardControllerTests: XCTestCase {
 
     override func tearDown() {
@@ -9,9 +19,6 @@ final class CharacterWizardControllerTests: XCTestCase {
         super.tearDown()
     }
 
-    /// A reference box so the `onApply` closure's captures survive being
-    /// handed back out — the test needs to read what was applied after the
-    /// fact, not just at closure-creation time.
     private final class AppliedBox {
         var items: [(CharacterWizardController.Field, String)] = []
     }
@@ -26,15 +33,16 @@ final class CharacterWizardControllerTests: XCTestCase {
         return store
     }
 
-    private func makeController(withProvider: Bool = true, onApply: @escaping (CharacterWizardController.Field, String) -> Void = { _, _ in }) -> CharacterWizardController {
-        CharacterWizardController(
+    private func makeController(withProvider: Bool = true,
+                                 onApply: @escaping (CharacterWizardController.Field, String) -> Void = { _, _ in }) async -> CharacterWizardController {
+        await CharacterWizardController(
             settingsStore: makeSettingsStore(withProvider: withProvider),
             completionService: ChatCompletionService(session: StubURLProtocol.session()),
             onApply: onApply
         )
     }
 
-    private func stubReply(_ content: String) -> StubURLProtocol.Stub {
+    private static func stubReply(_ content: String) -> StubURLProtocol.Stub {
         let escaped = content
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
@@ -44,12 +52,15 @@ final class CharacterWizardControllerTests: XCTestCase {
 
     // MARK: - Initial state
 
-    func testStartsWithAGreetingMessage() {
-        let controller = makeController()
-        XCTAssertEqual(controller.messages.count, 1)
-        XCTAssertEqual(controller.messages[0].sender, .bot)
-        XCTAssertFalse(controller.isDone)
-        XCTAssertNil(controller.pendingProposal)
+    func testStartsWithAGreetingMessage() async {
+        let controller = await makeController()
+        let messages = await controller.messages
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages[0].sender, .bot)
+        let isDone = await controller.isDone
+        XCTAssertFalse(isDone)
+        let pendingProposal = await controller.pendingProposal
+        XCTAssertNil(pendingProposal)
     }
 
     // MARK: - send()
@@ -59,88 +70,97 @@ final class CharacterWizardControllerTests: XCTestCase {
             XCTFail("must not make a network call for blank input")
             return StubURLProtocol.Stub(statusCode: 200, chunks: [])
         }
-        let controller = makeController()
-        controller.draftInputText = "   "
+        let controller = await makeController()
+        await MainActor.run { controller.draftInputText = "   " }
         await controller.send()
-        XCTAssertEqual(controller.messages.count, 1, "no user message should have been added")
+        let messages = await controller.messages
+        XCTAssertEqual(messages.count, 1, "no user message should have been added")
     }
 
     func testSendWithoutAnActiveProviderSetsAnErrorMessage() async {
-        let controller = makeController(withProvider: false)
-        controller.draftInputText = "Хочу персонажа"
+        let controller = await makeController(withProvider: false)
+        await MainActor.run { controller.draftInputText = "Хочу персонажа" }
         await controller.send()
-        XCTAssertEqual(controller.errorMessage, "Нет активного провайдера. Настрой API в настройках.")
+        let errorMessage = await controller.errorMessage
+        XCTAssertEqual(errorMessage, "Нет активного провайдера. Настрой API в настройках.")
     }
 
     // MARK: - Proposal flow
 
     func testProposalIsParsedAndExplanationShown() async {
         StubURLProtocol.requestHandler = { _ in
-            self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":"Звучит по-пиратски"}"#)
+            Self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":"Звучит по-пиратски"}"#)
         }
-        let controller = makeController()
+        let controller = await makeController()
 
-        controller.draftInputText = "Пират"
+        await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
 
-        XCTAssertEqual(controller.pendingProposal?.field, .name)
-        XCTAssertEqual(controller.pendingProposal?.value, "Рэйк")
-        XCTAssertTrue(controller.messages.contains { $0.text.contains("Звучит по-пиратски") })
+        let proposal = await controller.pendingProposal
+        XCTAssertEqual(proposal?.field, .name)
+        XCTAssertEqual(proposal?.value, "Рэйк")
+        let messages = await controller.messages
+        XCTAssertTrue(messages.contains { $0.text.contains("Звучит по-пиратски") })
     }
 
     func testAcceptAppliesTheFieldAndClearsTheProposal() async {
         StubURLProtocol.requestHandler = { _ in
-            self.stubReply(#"{"action":"propose","field":"description","value":"Пиратский капитан","explanation":""}"#)
+            Self.stubReply(#"{"action":"propose","field":"description","value":"Пиратский капитан","explanation":""}"#)
         }
         let box = AppliedBox()
-        let controller = makeController { field, value in box.items.append((field, value)) }
+        let controller = await makeController { field, value in box.items.append((field, value)) }
 
-        controller.draftInputText = "Пират"
+        await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
-        XCTAssertNotNil(controller.pendingProposal)
+        let proposalBeforeAccept = await controller.pendingProposal
+        XCTAssertNotNil(proposalBeforeAccept)
 
-        StubURLProtocol.requestHandler = { _ in self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
+        StubURLProtocol.requestHandler = { _ in Self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
         await controller.accept()
 
         XCTAssertEqual(box.items.count, 1)
         XCTAssertEqual(box.items.first?.0, .description)
         XCTAssertEqual(box.items.first?.1, "Пиратский капитан")
-        XCTAssertNil(controller.pendingProposal)
-        XCTAssertTrue(controller.isDone)
+        let proposalAfterAccept = await controller.pendingProposal
+        XCTAssertNil(proposalAfterAccept)
+        let isDone = await controller.isDone
+        XCTAssertTrue(isDone)
     }
 
     func testRejectDoesNotApplyTheField() async {
         StubURLProtocol.requestHandler = { _ in
-            self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":""}"#)
+            Self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":""}"#)
         }
         let box = AppliedBox()
-        let controller = makeController { field, value in box.items.append((field, value)) }
+        let controller = await makeController { field, value in box.items.append((field, value)) }
 
-        controller.draftInputText = "Пират"
+        await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
 
-        StubURLProtocol.requestHandler = { _ in self.stubReply("Хорошо, предложу другое имя.") }
+        StubURLProtocol.requestHandler = { _ in Self.stubReply("Хорошо, предложу другое имя.") }
         await controller.reject()
 
         XCTAssertTrue(box.items.isEmpty, "rejecting a proposal must never call onApply")
-        XCTAssertNil(controller.pendingProposal)
+        let proposal = await controller.pendingProposal
+        XCTAssertNil(proposal)
     }
 
     func testEditingAProposalThenSendingAppliesTheHandTypedValue() async {
         StubURLProtocol.requestHandler = { _ in
-            self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":""}"#)
+            Self.stubReply(#"{"action":"propose","field":"name","value":"Рэйк","explanation":""}"#)
         }
         let box = AppliedBox()
-        let controller = makeController { field, value in box.items.append((field, value)) }
+        let controller = await makeController { field, value in box.items.append((field, value)) }
 
-        controller.draftInputText = "Пират"
+        await MainActor.run { controller.draftInputText = "Пират" }
         await controller.send()
 
-        controller.beginEditingProposal()
-        XCTAssertEqual(controller.draftInputText, "Рэйк")
-        controller.draftInputText = "Капитан Морган"
+        await MainActor.run { controller.beginEditingProposal() }
+        let draftAfterEditStart = await controller.draftInputText
+        XCTAssertEqual(draftAfterEditStart, "Рэйк")
+        await MainActor.run { controller.draftInputText = "Капитан Морган" }
 
-        StubURLProtocol.requestHandler = { _ in self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
+        StubURLProtocol.requestHandler = { _ in Self.stubReply(#"{"action":"done","message":"Готово!"}"#) }
         await controller.send()
 
         XCTAssertEqual(box.items.count, 1)
@@ -151,24 +171,28 @@ final class CharacterWizardControllerTests: XCTestCase {
     // MARK: - Plain chat / malformed responses
 
     func testPlainTextReplyIsShownAsIsWithoutAProposal() async {
-        StubURLProtocol.requestHandler = { _ in self.stubReply("Какой персонаж тебе нужен?") }
-        let controller = makeController()
+        StubURLProtocol.requestHandler = { _ in Self.stubReply("Какой персонаж тебе нужен?") }
+        let controller = await makeController()
 
-        controller.draftInputText = "Привет"
+        await MainActor.run { controller.draftInputText = "Привет" }
         await controller.send()
 
-        XCTAssertNil(controller.pendingProposal)
-        XCTAssertTrue(controller.messages.contains { $0.text == "Какой персонаж тебе нужен?" })
+        let proposal = await controller.pendingProposal
+        XCTAssertNil(proposal)
+        let messages = await controller.messages
+        XCTAssertTrue(messages.contains { $0.text == "Какой персонаж тебе нужен?" })
     }
 
     func testMalformedJSONWithoutAnActionKeyFallsBackToPlainText() async {
-        StubURLProtocol.requestHandler = { _ in self.stubReply(#"Вот пример: {"foo":"bar"}"#) }
-        let controller = makeController()
+        StubURLProtocol.requestHandler = { _ in Self.stubReply(#"Вот пример: {"foo":"bar"}"#) }
+        let controller = await makeController()
 
-        controller.draftInputText = "Привет"
+        await MainActor.run { controller.draftInputText = "Привет" }
         await controller.send()
 
-        XCTAssertNil(controller.pendingProposal)
-        XCTAssertTrue(controller.messages.contains { $0.text.contains("Вот пример") })
+        let proposal = await controller.pendingProposal
+        XCTAssertNil(proposal)
+        let messages = await controller.messages
+        XCTAssertTrue(messages.contains { $0.text.contains("Вот пример") })
     }
 }
